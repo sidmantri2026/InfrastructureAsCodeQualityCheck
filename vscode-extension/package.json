@@ -1,0 +1,117 @@
+{
+  "name": "ansible-code-reviewer",
+  "displayName": "Ansible Code Reviewer",
+  "description": "Infrastructure Automation Team — rule-driven static analysis for Ansible playbooks with inline diagnostics and HTML reports",
+  "version": "1.0.0",
+  "publisher": "infra-automation-team",
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["Linters", "Other"],
+  "keywords": ["ansible", "lint", "security", "iac", "infrastructure"],
+  "icon": "icon.png",
+  "activationEvents": [
+    "onLanguage:yaml",
+    "onCommand:ansibleReviewer.reviewFile",
+    "onCommand:ansibleReviewer.reviewWorkspace",
+    "onCommand:ansibleReviewer.openReport",
+    "onCommand:ansibleReviewer.listRules"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ansibleReviewer.reviewFile",
+        "title": "🔍 Ansible Review: Current File",
+        "category": "Ansible Reviewer"
+      },
+      {
+        "command": "ansibleReviewer.reviewWorkspace",
+        "title": "🔍 Ansible Review: Entire Workspace",
+        "category": "Ansible Reviewer"
+      },
+      {
+        "command": "ansibleReviewer.openReport",
+        "title": "📂 Ansible Review: Open Latest HTML Report",
+        "category": "Ansible Reviewer"
+      },
+      {
+        "command": "ansibleReviewer.listRules",
+        "title": "📋 Ansible Review: List All Rules",
+        "category": "Ansible Reviewer"
+      },
+      {
+        "command": "ansibleReviewer.clearDiagnostics",
+        "title": "🧹 Ansible Review: Clear All Diagnostics",
+        "category": "Ansible Reviewer"
+      }
+    ],
+    "configuration": {
+      "title": "Ansible Code Reviewer",
+      "properties": {
+        "ansibleReviewer.pythonPath": {
+          "type": "string",
+          "default": "python3",
+          "description": "Path to the Python interpreter (must have pyyaml installed)"
+        },
+        "ansibleReviewer.reviewerScriptPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to reviewer.py. Leave blank to auto-detect from workspace root."
+        },
+        "ansibleReviewer.rulesDir": {
+          "type": "string",
+          "default": "",
+          "description": "Path to rules directory. Leave blank to use rules/ next to reviewer.py."
+        },
+        "ansibleReviewer.minSeverity": {
+          "type": "string",
+          "default": "info",
+          "enum": ["critical", "error", "warning", "info"],
+          "description": "Minimum severity level to report in the Problems panel"
+        },
+        "ansibleReviewer.runOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically run review when a YAML file is saved"
+        },
+        "ansibleReviewer.generateHtmlReport": {
+          "type": "boolean",
+          "default": true,
+          "description": "Also generate an HTML report on every review run"
+        },
+        "ansibleReviewer.showStatusBarItem": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Ansible Reviewer status in the VS Code status bar"
+        }
+      }
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "when": "resourceExtname == .yml || resourceExtname == .yaml",
+          "command": "ansibleReviewer.reviewFile",
+          "group": "navigation"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "ansibleReviewer.reviewFile",
+        "key": "ctrl+shift+a",
+        "mac": "cmd+shift+a",
+        "when": "editorFocus && (resourceExtname == .yml || resourceExtname == .yaml)"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.75.0",
+    "typescript": "^5.0.0",
+    "@vscode/vsce": "^2.19.0"
+  }
+}

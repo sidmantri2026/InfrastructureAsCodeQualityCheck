@@ -1,0 +1,21 @@
+- hosts: webservers
+  become: yes
+  vars:
+    db_password: MyS3cr3tPassw0rd!
+    webServerPort: 8080
+  tasks:
+    - copy:
+        src: nginx.conf
+        dest: /etc/nginx/nginx.conf
+    - name: task
+      shell: apt-get install -y nginx
+    - name: Start the service
+      service:
+        name: nginx
+    - name: Set database credentials
+      community.mysql.mysql_user:
+        password: "{{ db_password }}"
+    - name: Read some config
+      ansible.builtin.slurp:
+        src: /etc/app/config.yml
+      ignore_errors: yes

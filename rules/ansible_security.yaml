@@ -1,0 +1,102 @@
+category: Security
+technology: ansible
+description: Rules enforcing security best practices — secrets handling, privilege escalation, and hardening.
+rules:
+
+  - id: ANS-SEC-001
+    name: No hardcoded passwords or secrets
+    severity: critical
+    description: Passwords, API keys, tokens, and secrets must never be hardcoded in playbooks, vars files, or role defaults. Use Ansible Vault, environment variables, or an external secrets manager.
+    rationale: Hardcoded secrets will be committed to source control, exposed in logs, and available to anyone with read access to the repository. This is a critical security risk.
+    match_type: regex
+    target: any
+    pattern: "(password|passwd|secret|api_key|token|private_key)\\s*:\\s*['\"]?[A-Za-z0-9+/=!@#$%^&*]{8,}['\"]?"
+    flags: IGNORECASE
+    exclude_pattern: "vault|lookup|\\{\\{|changeme|example|placeholder|CHANGE_ME"
+    example_bad: |
+      vars:
+        db_password: MyS3cr3tPass!
+    example_good: |
+      vars:
+        db_password: "{{ vault_db_password }}"
+
+  - id: ANS-SEC-002
+    name: Avoid shell/command modules when alternatives exist
+    severity: warning
+    description: Prefer purpose-built Ansible modules over 'shell' or 'command'. Use shell/command only when no module exists for the task.
+    rationale: Shell and command modules bypass idempotency, skip change tracking, and are harder to read. They also make it easier to introduce injection vulnerabilities.
+    match_type: regex
+    target: task_module
+    pattern: "^\\s*(shell|command)\\s*:"
+    example_bad: |
+      - name: Install nginx
+        shell: apt-get install -y nginx
+    example_good: |
+      - name: Install nginx
+        ansible.builtin.apt:
+          name: nginx
+          state: present
+
+  - id: ANS-SEC-003
+    name: No_log must be set for sensitive tasks
+    severity: error
+    description: "Tasks that handle passwords, tokens, or other sensitive data must set 'no_log: true' to prevent secrets from appearing in output logs."
+    rationale: Ansible logs task output by default. Without no_log, secrets can be exposed in terminal output, log files, and AAP job logs.
+    match_type: regex
+    target: any
+    pattern: "(password|passwd|secret|token|private_key)\\s*:"
+    flags: IGNORECASE
+    require_sibling: "no_log:\\s*true"
+    exclude_pattern: "vault|lookup|\\{\\{"
+    example_bad: |
+      - name: Set database password
+        community.mysql.mysql_user:
+          password: "{{ db_password }}"
+    example_good: |
+      - name: Set database password
+        community.mysql.mysql_user:
+          password: "{{ db_password }}"
+        no_log: true
+
+  - id: ANS-SEC-004
+    name: Become should be scoped to tasks, not entire plays
+    severity: warning
+    description: "Avoid setting 'become: true' at the play level unless every task in the play requires it. Scope privilege escalation to individual tasks."
+    rationale: Play-level become grants root access to ALL tasks in the play, violating least-privilege principles. A misconfigured task running as root can cause catastrophic damage.
+    match_type: play_level_become
+    example_bad: |
+      - name: Configure webserver
+        hosts: webservers
+        become: true
+        tasks:
+          - name: Read config file
+            ansible.builtin.slurp:
+              src: /etc/app/config.yml
+    example_good: |
+      - name: Configure webserver
+        hosts: webservers
+        tasks:
+          - name: Install nginx
+            ansible.builtin.apt:
+              name: nginx
+            become: true
+
+  - id: ANS-SEC-005
+    name: File permissions must be explicitly set
+    severity: warning
+    description: When using the file or copy module, always explicitly set 'mode' to avoid inheriting unpredictable permissions from the environment.
+    rationale: Relying on umask or default permissions leads to inconsistent results across environments. Always be explicit about who can read/write/execute files.
+    match_type: module_missing_param
+    module: "(ansible.builtin.file|ansible.builtin.copy|ansible.builtin.template)"
+    required_param: mode
+    example_bad: |
+      - name: Copy app config
+        ansible.builtin.copy:
+          src: app.conf
+          dest: /etc/app/app.conf
+    example_good: |
+      - name: Copy app config
+        ansible.builtin.copy:
+          src: app.conf
+          dest: /etc/app/app.conf
+          mode: '0640'

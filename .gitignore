@@ -1,0 +1,29 @@
+# Generated reports — do not commit
+reports/*.html
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+
+# Node / VS Code extension build artifacts
+vscode-extension/node_modules/
+vscode-extension/out/
+vscode-extension/*.vsix.bak
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/settings.json
+.idea/
+
+# Secrets — never commit these
+*.vault
+vault_pass.txt
+.vault_password

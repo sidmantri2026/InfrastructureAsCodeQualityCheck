@@ -1,0 +1,53 @@
+---
+- name: Configure nginx webservers
+  hosts: webservers
+  vars:
+    web_server_port: 8080
+    db_password: "{{ vault_db_password }}"
+
+  tasks:
+    - name: Install nginx web server
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+      become: true
+      tags:
+        - nginx
+        - install
+
+    - name: Copy nginx configuration
+      ansible.builtin.copy:
+        src: nginx.conf
+        dest: /etc/nginx/nginx.conf
+        mode: '0644'
+      become: true
+      notify: Restart nginx after config change
+      tags:
+        - nginx
+        - configure
+
+    - name: Ensure nginx service is started and enabled
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true
+      become: true
+      tags:
+        - nginx
+
+    - name: Set database credentials
+      community.mysql.mysql_user:
+        password: "{{ db_password }}"
+        name: appuser
+        state: present
+      no_log: true
+      become: true
+      tags:
+        - database
+
+  handlers:
+    - name: Restart nginx after config change
+      ansible.builtin.service:
+        name: nginx
+        state: restarted
+      become: true
