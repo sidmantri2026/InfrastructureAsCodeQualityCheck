@@ -1,0 +1,137 @@
+category: Jenkinsfile - Hardcoding & Sensitive Data
+technology: jenkinsfile
+description: >
+  Rules preventing hardcoded values and sensitive data exposure in Jenkinsfiles.
+  Covers server addresses, credentials, environment names, version numbers,
+  and patterns that expose sensitive runtime values in build logs.
+rules:
+
+  - id: JNK-HARD-001
+    name: No hardcoded server addresses or hostnames
+    severity: error
+    description: "Server addresses, hostnames, and FQDNs must not be hardcoded in Jenkinsfile. Use pipeline parameters or Jenkins environment variables."
+    rationale: "Hardcoded server addresses make pipelines environment-specific and require code changes to point to different targets. They also expose internal infrastructure topology in source control."
+    match_type: regex
+    target: any
+    pattern: "(sh|bat)\\s+['\"].*(?:ssh|scp|rsync|curl|wget)\\s+[a-zA-Z][a-zA-Z0-9._-]*\\.(internal|corp|local|prod|dev|staging)"
+    exclude_pattern: "//|\\$\\{|params\\."
+    example_bad: |
+      sh 'ssh deploy@appserver01.prod.internal ./deploy.sh'
+      sh 'curl https://api.prod.internal/health'
+    example_good: |
+      sh "ssh deploy@${params.DEPLOY_HOST} ./deploy.sh"
+      sh "curl https://${env.API_HOST}/health"
+
+  - id: JNK-HARD-002
+    name: No hardcoded IP addresses in pipeline steps
+    severity: error
+    description: "IP addresses must not appear hardcoded inside sh, bat, or other step commands in Jenkinsfile."
+    rationale: "IP addresses embedded in pipeline steps are invisible to operators running the build — they cannot be overridden without editing the Jenkinsfile, committing, and rerunning."
+    match_type: regex
+    target: any
+    pattern: "['\"].*(?:(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.){3}(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?).*['\"]"
+    exclude_pattern: "//|\\$\\{|0\\.0\\.0\\.0|127\\.0\\.0\\.1|255\\.255"
+    example_bad: |
+      sh 'scp ./app.jar deployer@10.20.30.40:/opt/app/'
+    example_good: |
+      sh "scp ./app.jar deployer@${env.DEPLOY_SERVER_IP}:/opt/app/"
+
+  - id: JNK-HARD-003
+    name: No hardcoded environment names in deployment commands
+    severity: error
+    description: "Environment names (prod, staging, dev, uat) in deployment commands must be pipeline parameters, not hardcoded strings."
+    rationale: "Hardcoded environment names mean a single Jenkinsfile can only deploy to one environment. Using parameters allows the same pipeline to promote through dev → staging → prod without code changes."
+    match_type: regex
+    target: any
+    pattern: "(sh|bat)\\s+['\"].*[-_](prod|production|staging|uat|preprod|dev|development)['\"]"
+    exclude_pattern: "//|\\$\\{params|\\$\\{env\\.|stage\\("
+    example_bad: |
+      sh './deploy.sh --env=production'
+      sh 'helm upgrade myapp ./chart --set env=staging'
+    example_good: |
+      sh "./deploy.sh --env=${params.DEPLOY_ENV}"
+      sh "helm upgrade myapp ./chart --set env=${params.DEPLOY_ENV}"
+
+  - id: JNK-HARD-004
+    name: No hardcoded version numbers in pipeline steps
+    severity: warning
+    description: "Application version numbers and build tags in pipeline steps must come from params, env, or computed values — not hardcoded strings."
+    rationale: "Hardcoded version numbers mean every release requires a Jenkinsfile edit. Versions should be computed from git tags, params.VERSION, or BUILD_NUMBER to enable automated release pipelines."
+    match_type: regex
+    target: any
+    pattern: "(sh|bat)\\s+['\"].*[:-]\\d+\\.\\d+\\.\\d+['\"]"
+    exclude_pattern: "//|\\$\\{|BUILD_NUMBER|GIT_TAG|VERSION|docker.*FROM"
+    example_bad: |
+      sh 'docker build -t myapp:1.4.2 .'
+      sh './deploy.sh --version=2.0.1'
+    example_good: |
+      sh "docker build -t myapp:${params.APP_VERSION} ."
+      sh "./deploy.sh --version=${params.APP_VERSION}"
+
+  - id: JNK-HARD-005
+    name: No hardcoded Docker registry URLs
+    severity: error
+    description: "Docker registry URLs must not be hardcoded in pipeline steps. Use environment variables declared in the environment block."
+    rationale: "Registry URLs differ between environments (internal registry for dev, production registry for prod). Parameterising them allows the same pipeline to push to different registries for different environments."
+    match_type: regex
+    target: any
+    pattern: "(docker\\s+(push|pull|tag))\\s+['\"]?[a-zA-Z][a-zA-Z0-9._-]+\\.[a-zA-Z]{2,}/[a-zA-Z]"
+    exclude_pattern: "//|\\$\\{|env\\."
+    example_bad: |
+      sh 'docker push registry.prod.internal/myapp:latest'
+      sh 'docker pull artifacts.company.com/base-image:1.0'
+    example_good: |
+      environment {
+        REGISTRY = credentials('docker-registry-url')
+      }
+      // ...
+      sh "docker push ${env.REGISTRY}/myapp:${env.BUILD_NUMBER}"
+
+  - id: JNK-HARD-006
+    name: No hardcoded Kubernetes namespace or cluster names
+    severity: error
+    description: "Kubernetes namespace names and cluster context names must not be hardcoded in kubectl or helm commands."
+    rationale: "Namespace and cluster names differ between environments. Parameterising them allows a single pipeline to deploy to dev, staging, and production clusters without modification."
+    match_type: regex
+    target: any
+    pattern: "(kubectl|helm)\\s+.*--namespace\\s+(?!\\$)[a-zA-Z][a-zA-Z0-9-]+|kubectl\\s+.*--context\\s+(?!\\$)[a-zA-Z]"
+    exclude_pattern: "//|\\$\\{|params\\."
+    example_bad: |
+      sh 'kubectl apply -f ./k8s/ --namespace production'
+      sh 'helm upgrade myapp ./chart --namespace prod-apps'
+    example_good: |
+      sh "kubectl apply -f ./k8s/ --namespace ${params.K8S_NAMESPACE}"
+      sh "helm upgrade myapp ./chart --namespace ${params.K8S_NAMESPACE}"
+
+  - id: JNK-HARD-007
+    name: Do not echo credential values in pipeline steps
+    severity: critical
+    description: "Pipeline steps must not echo, print, or write the values of credentials to console output. Jenkins masks credentials, but explicit echoing bypasses masking."
+    rationale: "Jenkins credential masking works when credentials are injected via withCredentials(). Explicitly printing a credential value in an echo or printf bypasses masking and exposes the value in build logs permanently."
+    match_type: regex
+    target: any
+    pattern: "(echo|printf|sh\\s+['\"]echo).*\\$\\{?(PASSWORD|TOKEN|SECRET|API_KEY|CRED)[A-Z_]*\\}?"
+    flags: IGNORECASE
+    exclude_pattern: "//"
+    example_bad: |
+      echo "Using token: ${API_TOKEN}"
+      sh "echo DB password: ${DB_PASSWORD}"
+    example_good: |
+      echo "Connecting to ${env.DB_HOST} as ${env.DB_USER}"
+      // Never print credential values — Jenkins masking is not foolproof
+
+  - id: JNK-HARD-008
+    name: No hardcoded email recipients in notification steps
+    severity: warning
+    description: "Email recipients and Slack channels in notification steps must use environment variables or parameters, not hardcoded addresses."
+    rationale: "Notification recipients differ between environments and change over time. Hardcoded addresses cannot be changed without modifying the Jenkinsfile, and they expose internal contact details in source control."
+    match_type: regex
+    target: any
+    pattern: "(mail\\s+to:|emailext\\s+.*to:|slackSend.*channel:)\\s*['\"][a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+|slackSend.*channel:\\s*['\"]#[a-z0-9-]+"
+    exclude_pattern: "//|\\$\\{|env\\.|params\\."
+    example_bad: |
+      mail to: 'team@example.com', subject: "Build Failed: ${env.JOB_NAME}"
+      slackSend channel: '#deployments', message: "Deployed!"
+    example_good: |
+      mail to: "${env.NOTIFY_EMAIL}", subject: "Build Failed: ${env.JOB_NAME}"
+      slackSend channel: "${env.SLACK_CHANNEL}", message: "Deployed!"

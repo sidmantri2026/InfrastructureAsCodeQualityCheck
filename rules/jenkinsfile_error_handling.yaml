@@ -1,0 +1,211 @@
+category: Jenkinsfile - Error Handling
+technology: jenkinsfile
+description: >
+  Error handling rules for Jenkins pipelines.
+  Covers post blocks, failure notifications, retry logic,
+  rollback stages, and patterns that hide build failures.
+rules:
+
+  - id: JNK-ERR-001
+    name: Pipeline must define a post block with failure handling
+    severity: error
+    description: "Every pipeline must include a post block with at least a 'failure' or 'always' section to handle build failures."
+    rationale: "Without a post block, a failed build produces no notification, performs no cleanup, and leaves no trace of what happened beyond the console log. Post blocks ensure teams are notified and resources are cleaned up."
+    match_type: file_missing_pattern
+    required_pattern: "^\\s*post\\s*\\{"
+    search_lines: 999
+    example_bad: |
+      pipeline {
+        agent any
+        stages {
+          stage('Build') { steps { sh 'make' } }
+        }
+        // No post block — failures are silent
+      }
+    example_good: |
+      pipeline {
+        agent any
+        stages {
+          stage('Build') { steps { sh 'make' } }
+        }
+        post {
+          failure {
+            mail to: 'team@example.com', subject: "FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER}"
+          }
+          always { cleanWs() }
+        }
+      }
+
+  - id: JNK-ERR-002
+    name: Post block must include failure or unsuccessful handler
+    severity: error
+    description: "The post block must contain a 'failure', 'unsuccessful', or 'always' section. An empty post block or one with only 'success' provides no error handling."
+    rationale: "A post block with only a 'success' handler is useless for error handling. The whole point of post blocks is to react to failures with notifications, cleanup, and rollback."
+    match_type: regex
+    target: any
+    pattern: "post\\s*\\{[^}]*success[^}]*\\}"
+    require_nearby: "failure|unsuccessful|always"
+    exclude_pattern: "//"
+    example_bad: |
+      post {
+        success {
+          echo 'Build succeeded'
+        }
+      }
+    example_good: |
+      post {
+        success { echo 'Build succeeded' }
+        failure { mail to: 'team@example.com', subject: "FAILED: ${env.JOB_NAME}" }
+        always  { cleanWs() }
+      }
+
+  - id: JNK-ERR-003
+    name: Use retry for flaky external calls
+    severity: warning
+    description: "Stages or steps that call external systems (deployments, API calls, Docker pushes) should wrap the call in retry() to handle transient failures."
+    rationale: "External systems are transiently unavailable (registry timeouts, API rate limits, network blips). Without retry, these cause build failures that require a full manual re-run. retry() makes pipelines resilient to transient failures."
+    match_type: regex
+    target: any
+    pattern: "(docker\\s+push|helm\\s+upgrade|kubectl\\s+apply|curl\\s+|wget\\s+)"
+    require_nearby: "retry\\s*\\("
+    exclude_pattern: "//"
+    example_bad: |
+      stage('Push Image') {
+        steps {
+          sh 'docker push myapp:${BUILD_NUMBER}'
+        }
+      }
+    example_good: |
+      stage('Push Image') {
+        steps {
+          retry(3) {
+            sh 'docker push myapp:${BUILD_NUMBER}'
+          }
+        }
+      }
+
+  - id: JNK-ERR-004
+    name: Wrap risky shell steps in try/catch within script blocks
+    severity: warning
+    description: "Shell commands in script { } blocks that can fail for expected reasons must be wrapped in try/catch with explicit error handling."
+    rationale: "In scripted pipeline and script{} blocks, uncaught exceptions bubble up and fail the build with a stack trace. try/catch allows providing context, performing cleanup, and potentially continuing with a degraded state."
+    match_type: regex
+    target: any
+    pattern: "^\\s*script\\s*\\{[\\s\\S]*?sh\\s+['\"]"
+    require_nearby: "try\\s*\\{"
+    exclude_pattern: "//"
+    example_bad: |
+      script {
+        def result = sh(script: './run_tests.sh', returnStdout: true)
+        processResults(result)
+      }
+    example_good: |
+      script {
+        try {
+          def result = sh(script: './run_tests.sh', returnStdout: true)
+          processResults(result)
+        } catch (Exception e) {
+          currentBuild.result = 'UNSTABLE'
+          echo "Tests failed: ${e.message}"
+        }
+      }
+
+  - id: JNK-ERR-005
+    name: Capture and archive test results
+    severity: error
+    description: "Pipelines running tests must publish results with junit() or publishTestResults. Do not let test failures only appear in console output."
+    rationale: "Publishing test results with junit() gives Jenkins a structured view of failures, enables trend tracking, and allows developers to see exactly which tests failed without reading the full console log."
+    match_type: regex
+    target: any
+    pattern: "(mvn\\s+test|gradle\\s+test|pytest|npm\\s+(test|run\\s+test)|dotnet\\s+test|go\\s+test)"
+    require_nearby: "junit|publishTestResults|testResultsPattern|recordIssues"
+    exclude_pattern: "//"
+    example_bad: |
+      stage('Test') {
+        steps {
+          sh 'mvn test'
+        }
+      }
+    example_good: |
+      stage('Test') {
+        steps {
+          sh 'mvn test'
+        }
+        post {
+          always {
+            junit '**/target/surefire-reports/*.xml'
+          }
+        }
+      }
+
+  - id: JNK-ERR-006
+    name: Set build result explicitly on recoverable failures
+    severity: warning
+    description: "When a stage failure should mark the build as UNSTABLE (not FAILED), set currentBuild.result = 'UNSTABLE' explicitly in the catch or post block."
+    rationale: "Differentiating UNSTABLE from FAILURE helps teams understand build quality. A build with flaky tests is UNSTABLE (warning); a build that cannot compile is FAILED. Using the right status prevents alert fatigue."
+    match_type: regex
+    target: any
+    pattern: "catch\\s*\\([^)]*\\)\\s*\\{[^}]*\\}"
+    require_nearby: "currentBuild\\.result|unstable\\("
+    exclude_pattern: "//"
+    example_bad: |
+      catch (Exception e) {
+        echo "Non-fatal error: ${e.message}"
+      }
+    example_good: |
+      catch (Exception e) {
+        currentBuild.result = 'UNSTABLE'
+        echo "Non-fatal error: ${e.message}"
+      }
+
+  - id: JNK-ERR-007
+    name: Include deployment rollback stage on failure
+    severity: warning
+    description: "Pipelines that deploy to production must include a rollback stage or post-failure handler that reverts the deployment if it fails."
+    rationale: "A failed production deployment without rollback leaves the application in a broken state until manual intervention. Automated rollback minimises the time to recovery."
+    match_type: regex
+    target: any
+    pattern: "stage\\s*\\(['\"][^'\"]*[Pp]rod[^'\"]*[Dd]eploy[^'\"]*['\"]|stage\\s*\\(['\"][^'\"]*[Dd]eploy[^'\"]*[Pp]rod[^'\"]*['\"]"
+    require_nearby: "rollback|Rollback|post\\s*\\{.*failure"
+    exclude_pattern: "//"
+    example_bad: |
+      stage('Deploy to Production') {
+        steps {
+          sh './deploy.sh --env=prod'
+        }
+      }
+    example_good: |
+      stage('Deploy to Production') {
+        steps {
+          sh './deploy.sh --env=prod'
+        }
+        post {
+          failure {
+            sh './rollback.sh --env=prod'
+            mail to: 'oncall@example.com', subject: "PROD ROLLBACK triggered: ${env.JOB_NAME}"
+          }
+        }
+      }
+
+  - id: JNK-ERR-008
+    name: Pipeline must send notifications on failure
+    severity: error
+    description: "The pipeline post/failure block must send a notification (email, Slack, Teams, or other) so the team is alerted to build failures."
+    rationale: "Without notifications, build failures are only visible to developers who happen to check the Jenkins UI. Automated notifications ensure the team is immediately aware of failures and can respond quickly."
+    match_type: file_missing_pattern
+    required_pattern: "mail\\s+to:|slackSend|office365ConnectorSend|emailext|mattermostSend|hipchatSend"
+    search_lines: 999
+    example_bad: |
+      post {
+        failure {
+          echo 'Build failed'
+        }
+      }
+    example_good: |
+      post {
+        failure {
+          mail to: "${env.CHANGE_AUTHOR_EMAIL ?: 'team@example.com'}",
+               subject: "FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+               body: "Build URL: ${env.BUILD_URL}"
+        }
+      }

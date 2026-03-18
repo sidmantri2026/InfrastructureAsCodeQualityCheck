@@ -1,0 +1,26 @@
+pipeline {
+    agent any
+
+    environment {
+        DB_PASSWORD = 'MyS3cr3tPass!'
+        API_TOKEN   = 'ghp_abc123xyz789'
+        REGISTRY    = 'registry.prod.internal'
+    }
+
+    stages {
+        stage('Build') {
+            steps {
+                sh 'mvn clean package'
+            }
+        }
+
+        stage('Deploy to Production') {
+            steps {
+                sh 'ssh deploy@appserver01.prod.internal ./deploy.sh --env=production'
+                sh 'docker push registry.prod.internal/myapp:latest'
+                sh 'kubectl apply -f ./k8s/ --namespace production'
+                echo "Using token: ${API_TOKEN}"
+            }
+        }
+    }
+}

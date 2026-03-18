@@ -1,105 +1,156 @@
 {
-  "name": "ansible-code-reviewer",
-  "displayName": "Ansible Code Reviewer",
-  "description": "Infrastructure Automation Team — rule-driven static analysis for Ansible playbooks with inline diagnostics and HTML reports",
-  "version": "1.0.0",
+  "name": "iac-quality-reviewer",
+  "displayName": "IaC Quality Reviewer",
+  "description": "Infrastructure Automation Team \u2014 rule-driven static analysis for Ansible, Bash, PowerShell, and Jenkinsfiles",
+  "version": "1.1.0",
   "publisher": "infra-automation-team",
-  "engines": { "vscode": "^1.75.0" },
-  "categories": ["Linters", "Other"],
-  "keywords": ["ansible", "lint", "security", "iac", "infrastructure"],
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Linters",
+    "Other"
+  ],
+  "keywords": [
+    "ansible",
+    "bash",
+    "powershell",
+    "jenkinsfile",
+    "iac",
+    "security",
+    "lint",
+    "infrastructure"
+  ],
   "icon": "icon.png",
   "activationEvents": [
     "onLanguage:yaml",
-    "onCommand:ansibleReviewer.reviewFile",
-    "onCommand:ansibleReviewer.reviewWorkspace",
-    "onCommand:ansibleReviewer.openReport",
-    "onCommand:ansibleReviewer.listRules"
+    "onLanguage:shellscript",
+    "onLanguage:powershell",
+    "onLanguage:groovy",
+    "onCommand:iacReviewer.reviewFile",
+    "onCommand:iacReviewer.reviewSelected",
+    "onCommand:iacReviewer.reviewSelectedHtml",
+    "onCommand:iacReviewer.reviewWorkspace",
+    "onCommand:iacReviewer.openReport",
+    "onCommand:iacReviewer.listRules"
   ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "ansibleReviewer.reviewFile",
-        "title": "🔍 Ansible Review: Current File",
-        "category": "Ansible Reviewer"
+        "command": "iacReviewer.reviewFile",
+        "title": "\ud83d\udd0d Review Current File",
+        "category": "IaC Reviewer"
       },
       {
-        "command": "ansibleReviewer.reviewWorkspace",
-        "title": "🔍 Ansible Review: Entire Workspace",
-        "category": "Ansible Reviewer"
+        "command": "iacReviewer.reviewSelected",
+        "title": "\ud83d\udd0d IaC Review: Review & Show Diagnostics",
+        "category": "IaC Reviewer"
       },
       {
-        "command": "ansibleReviewer.openReport",
-        "title": "📂 Ansible Review: Open Latest HTML Report",
-        "category": "Ansible Reviewer"
+        "command": "iacReviewer.reviewSelectedHtml",
+        "title": "\ud83d\udcc4 IaC Review: Review & Open HTML Report",
+        "category": "IaC Reviewer"
       },
       {
-        "command": "ansibleReviewer.listRules",
-        "title": "📋 Ansible Review: List All Rules",
-        "category": "Ansible Reviewer"
+        "command": "iacReviewer.reviewWorkspace",
+        "title": "\ud83d\udd0d Review Entire Workspace",
+        "category": "IaC Reviewer"
       },
       {
-        "command": "ansibleReviewer.clearDiagnostics",
-        "title": "🧹 Ansible Review: Clear All Diagnostics",
-        "category": "Ansible Reviewer"
+        "command": "iacReviewer.openReport",
+        "title": "\ud83d\udcc2 Open Latest HTML Report",
+        "category": "IaC Reviewer"
+      },
+      {
+        "command": "iacReviewer.listRules",
+        "title": "\ud83d\udccb List All Rules",
+        "category": "IaC Reviewer"
+      },
+      {
+        "command": "iacReviewer.clearDiagnostics",
+        "title": "\ud83e\uddf9 Clear All Diagnostics",
+        "category": "IaC Reviewer"
       }
     ],
     "configuration": {
-      "title": "Ansible Code Reviewer",
+      "title": "IaC Quality Reviewer",
       "properties": {
-        "ansibleReviewer.pythonPath": {
+        "iacReviewer.pythonPath": {
           "type": "string",
           "default": "python3",
-          "description": "Path to the Python interpreter (must have pyyaml installed)"
+          "description": "Path to Python interpreter (python3 on Mac/Linux, python on Windows)"
         },
-        "ansibleReviewer.reviewerScriptPath": {
+        "iacReviewer.reviewerScriptPath": {
           "type": "string",
           "default": "",
-          "description": "Path to reviewer.py. Leave blank to auto-detect from workspace root."
+          "description": "Full path to reviewer.py. Leave blank to auto-detect from workspace root. Example: /Users/you/repos/InfrastructureAsCodeQualityCheck/reviewer.py"
         },
-        "ansibleReviewer.rulesDir": {
+        "iacReviewer.rulesDir": {
           "type": "string",
           "default": "",
-          "description": "Path to rules directory. Leave blank to use rules/ next to reviewer.py."
+          "description": "Path to rules/ directory. Leave blank to use rules/ next to reviewer.py."
         },
-        "ansibleReviewer.minSeverity": {
+        "iacReviewer.minSeverity": {
           "type": "string",
           "default": "info",
-          "enum": ["critical", "error", "warning", "info"],
-          "description": "Minimum severity level to report in the Problems panel"
+          "enum": [
+            "critical",
+            "error",
+            "warning",
+            "info"
+          ],
+          "description": "Minimum severity level to show in Problems panel"
         },
-        "ansibleReviewer.runOnSave": {
+        "iacReviewer.runOnSave": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically run review when a YAML file is saved"
+          "description": "Auto-review when saving .yml .yaml .sh .ps1 .groovy or Jenkinsfile"
         },
-        "ansibleReviewer.generateHtmlReport": {
+        "iacReviewer.generateHtmlReport": {
           "type": "boolean",
           "default": true,
-          "description": "Also generate an HTML report on every review run"
+          "description": "Generate HTML report alongside inline diagnostics on every review"
         },
-        "ansibleReviewer.showStatusBarItem": {
+        "iacReviewer.showStatusBarItem": {
           "type": "boolean",
           "default": true,
-          "description": "Show Ansible Reviewer status in the VS Code status bar"
+          "description": "Show IaC Reviewer in the VS Code status bar"
         }
       }
     },
     "menus": {
+      "explorer/context": [
+        {
+          "command": "iacReviewer.reviewSelected",
+          "group": "iacreviewer@1",
+          "when": "explorerResourceIsFolder || resourceExtname =~ /\\.(yml|yaml|sh|ps1|groovy|jenkinsfile)$/ || resourceFilename =~ /^[Jj]enkinsfile/"
+        },
+        {
+          "command": "iacReviewer.reviewSelectedHtml",
+          "group": "iacreviewer@2",
+          "when": "explorerResourceIsFolder || resourceExtname =~ /\\.(yml|yaml|sh|ps1|groovy|jenkinsfile)$/ || resourceFilename =~ /^[Jj]enkinsfile/"
+        }
+      ],
       "editor/context": [
         {
-          "when": "resourceExtname == .yml || resourceExtname == .yaml",
-          "command": "ansibleReviewer.reviewFile",
-          "group": "navigation"
+          "command": "iacReviewer.reviewFile",
+          "group": "iacreviewer@1",
+          "when": "resourceExtname =~ /\\.(yml|yaml|sh|ps1|groovy|jenkinsfile)$/ || resourceFilename =~ /^[Jj]enkinsfile/"
+        },
+        {
+          "command": "iacReviewer.reviewSelectedHtml",
+          "group": "iacreviewer@2",
+          "when": "resourceExtname =~ /\\.(yml|yaml|sh|ps1|groovy|jenkinsfile)$/ || resourceFilename =~ /^[Jj]enkinsfile/"
         }
       ]
     },
     "keybindings": [
       {
-        "command": "ansibleReviewer.reviewFile",
+        "command": "iacReviewer.reviewFile",
         "key": "ctrl+shift+a",
         "mac": "cmd+shift+a",
-        "when": "editorFocus && (resourceExtname == .yml || resourceExtname == .yaml)"
+        "when": "editorFocus"
       }
     ]
   },

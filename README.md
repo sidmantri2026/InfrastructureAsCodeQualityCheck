@@ -1,83 +1,163 @@
-# Ansible Code Reviewer
+# IaC Quality Reviewer
 
-> Rule-driven static analysis for Ansible playbooks and roles.  
-> Built for **Infrastructure Automation Teams** — consistent code reviews regardless of who runs them.
-
----
-
-## What It Does
-
-- Surfaces violations as **inline squiggly underlines + Problems panel** in VS Code
-- Generates a rich **HTML report** for sharing in code reviews and Jenkins
-- Produces a **0–100 quality score** and A–F grade per file
-- Includes **56 rules** out of the box: naming, security, idempotency, style, and cloud security (AWS, Azure, GCP — sourced from KICS by Checkmarx)
-- Exits with code `1` on critical/error violations — suitable as a Jenkins build gate
-- **Zero AI, zero internet at review time** — runs fully offline on air-gapped VDIs
+> Rule-driven static analysis for infrastructure automation code.  
+> **Ansible · Bash · PowerShell · Jenkinsfile** — 211 rules, VS Code extension, HTML reports, Jenkins integration.
 
 ---
 
-## Quick Start
+## ⚠ IMPORTANT — Read Before Installing
+
+**Both the VS Code extension and the command-line tool require this repository to be cloned/downloaded to your local machine first.**
+
+The VS Code extension is a thin wrapper. It calls `reviewer.py` from this repository. If `reviewer.py` is not present on your machine, the extension will not work.
+
+---
+
+## Step 1 — Get This Repository on Your Machine
+
+### Option A — Clone from GitHub (recommended for your team)
 
 ```bash
-pip3 install -r requirements.txt
-python3 reviewer.py ./your-ansible-project/
+git clone https://github.com/sidmantri2026/InfrastructureAsCodeQualityCheck.git
+cd InfrastructureAsCodeQualityCheck
 ```
+
+### Option B — Download as ZIP
+
+1. Go to https://github.com/sidmantri2026/InfrastructureAsCodeQualityCheck
+2. Click **Code → Download ZIP**
+3. Extract to a **permanent location** (e.g. `~/repos/InfrastructureAsCodeQualityCheck`)
+4. Do NOT use a temp folder or Downloads — the extension needs a stable path
 
 ---
 
-## VS Code Extension (Recommended for Daily Use)
+## Step 2 — Install Python Dependency
 
-### Install (one-time per developer)
+```bash
+# macOS / Linux
+pip3 install pyyaml
 
-1. Open VS Code → `Ctrl+Shift+P` → **Extensions: Install from VSIX...**
-2. Select `vscode-extension/ansible-code-reviewer-1.0.0.vsix`
-3. Reload VS Code
+# Windows
+pip install pyyaml
+```
 
-### What you get after install
+Verify it works — run from inside the repo folder:
 
-| Feature | Detail |
+```bash
+python3 reviewer.py --list-rules    # macOS / Linux
+python  reviewer.py --list-rules    # Windows
+```
+
+You should see 211 rules listed. If so, the engine is ready.
+
+---
+
+## Step 3 — Install the VS Code Extension
+
+The `.vsix` file is included in this repository.
+
+1. Open **VS Code**
+2. `Ctrl+Shift+P` → **Extensions: Install from VSIX...**
+3. Navigate to the repo folder you cloned/extracted in Step 1
+4. Open `vscode-extension/` → select **`iac-quality-reviewer-1.1.0.vsix`**
+5. Click **Install**
+6. **Reload VS Code** when prompted
+
+After reload you will see `$(shield) IaC Reviewer` in the status bar at the bottom of VS Code.
+
+---
+
+## Step 4 — Open Your Project in VS Code
+
+The extension auto-finds `reviewer.py` when the repo (or a project inside it) is open in VS Code.
+
+**Recommended: open the repo folder itself as your workspace:**
+
+```
+File → Open Folder → InfrastructureAsCodeQualityCheck/
+```
+
+Or open your own Ansible/Bash/PowerShell project folder. The extension searches for `reviewer.py` in the workspace root and one level up.
+
+**If auto-detect fails** (you see a "reviewer.py not found" warning):
+
+1. `Ctrl+Shift+P` → **Open User Settings**
+2. Search for `iacReviewer.reviewerScriptPath`
+3. Set it to the full path of `reviewer.py`:
+   - macOS/Linux: `/Users/yourname/repos/InfrastructureAsCodeQualityCheck/reviewer.py`
+   - Windows: `C:\repos\InfrastructureAsCodeQualityCheck\reviewer.py`
+
+---
+
+## Using the Extension
+
+### Auto-review on save
+
+Save any `.yml`, `.yaml`, `.sh`, `.ps1`, `.groovy`, or `Jenkinsfile` and violations appear instantly as squiggles.
+
+### Right-click in Explorer (NEW in v1.1)
+
+Right-click any **file**, **folder**, or **multiple selected items**:
+
+| Menu Option | What it does |
 |---|---|
-| **Auto review on save** | Save any `.yml` → violations appear instantly |
-| **Inline squiggles** | Red = critical/error · Yellow = warning · Blue = info |
-| **Problems panel** | Full list, filterable, with rule IDs |
-| **Hover for rationale** | Hover any squiggle to see *why* the rule exists |
-| **Status bar** | Shows live violation count; click to review |
-| **Right-click menu** | Right-click YAML file → "🔍 Ansible Review: Current File" |
-| **Keyboard shortcut** | `Ctrl+Shift+A` · Mac: `Cmd+Shift+A` |
-| **HTML report** | Generated alongside diagnostics; open via Command Palette |
+| 🔍 IaC Review: Review & Show Diagnostics | Squiggles in Problems panel |
+| 📄 IaC Review: Review & Open HTML Report | Squiggles + opens HTML report in browser |
 
-### Commands (`Ctrl+Shift+P` → type "Ansible")
+### Command Palette (`Ctrl+Shift+P` → type "IaC")
 
-```
-🔍 Ansible Review: Current File
-🔍 Ansible Review: Entire Workspace
-📂 Ansible Review: Open Latest HTML Report
-📋 Ansible Review: List All Rules
-🧹 Ansible Review: Clear All Diagnostics
-```
+| Command | What it does |
+|---|---|
+| 🔍 Review Current File | Review the open file |
+| 🔍 Review Entire Workspace | Review all supported files |
+| 📂 Open Latest HTML Report | Open last HTML report in browser |
+| 📋 List All Rules | Print all 211 rules to Output panel |
+| 🧹 Clear All Diagnostics | Remove squiggles |
 
-### Settings (`File → Preferences → Settings → search "Ansible Reviewer"`)
+**Keyboard shortcut:** `Ctrl+Shift+A` (Mac: `Cmd+Shift+A`)
+
+---
+
+## Extension Settings
+
+`File → Preferences → Settings → search "IaC Reviewer"`
 
 | Setting | Default | Description |
 |---|---|---|
-| `ansibleReviewer.pythonPath` | `python3` | Python interpreter path |
-| `ansibleReviewer.reviewerScriptPath` | _(auto)_ | Path to reviewer.py (auto-detects from workspace root) |
-| `ansibleReviewer.rulesDir` | _(auto)_ | Path to rules/ directory |
-| `ansibleReviewer.minSeverity` | `info` | Minimum severity for Problems panel |
-| `ansibleReviewer.runOnSave` | `true` | Auto-review on save |
-| `ansibleReviewer.generateHtmlReport` | `true` | Also generate HTML on each run |
-| `ansibleReviewer.showStatusBarItem` | `true` | Status bar visibility |
+| `iacReviewer.pythonPath` | `python3` | Set to `python` on Windows if needed |
+| `iacReviewer.reviewerScriptPath` | auto | **Set manually if auto-detect fails** — full path to `reviewer.py` |
+| `iacReviewer.rulesDir` | auto | Path to `rules/` directory |
+| `iacReviewer.minSeverity` | `info` | Minimum severity shown in Problems panel |
+| `iacReviewer.runOnSave` | `true` | Auto-review on file save |
+| `iacReviewer.generateHtmlReport` | `true` | Also generate HTML on each review |
+| `iacReviewer.showStatusBarItem` | `true` | Show status bar |
+
+---
+
+## Troubleshooting
+
+**"reviewer.py not found"**
+→ Open the repo folder in VS Code, OR set `iacReviewer.reviewerScriptPath` manually in Settings.
+
+**"No module named yaml" / pyyaml error**
+→ Run `pip3 install pyyaml` (or `pip install pyyaml` on Windows).
+
+**Windows: "python3 not found"**
+→ Change `iacReviewer.pythonPath` to `python` in Settings.
+
+**Extension installed but no squiggles**
+→ Open `View → Output → IaC Quality Reviewer` and check for error messages.
 
 ---
 
 ## Command Line Usage
 
 ```bash
-python3 reviewer.py <path>                          # Review file or directory
-python3 reviewer.py <path> --min-severity error     # Errors and criticals only
-python3 reviewer.py <path> --output my-report.html  # Custom report path
-python3 reviewer.py <path> --json                   # JSON output for CI
-python3 reviewer.py --list-rules                    # List all loaded rules
+python3 reviewer.py <file_or_dir>                          # Review file or directory
+python3 reviewer.py <dir> --min-severity error             # Errors and criticals only
+python3 reviewer.py <dir> --output my-report.html          # Custom report path
+python3 reviewer.py <dir> --json                           # JSON output for CI
+python3 reviewer.py --list-rules                           # List all rules
 ```
 
 ---
@@ -85,63 +165,42 @@ python3 reviewer.py --list-rules                    # List all loaded rules
 ## Project Structure
 
 ```
-ansible-code-reviewer/
+InfrastructureAsCodeQualityCheck/
 ├── reviewer.py                               ← Core engine
-├── requirements.txt                          ← pip3 install -r requirements.txt
-├── rules/
-│   ├── ansible_naming.yaml                   ←  5 rules: naming conventions
-│   ├── ansible_security.yaml                 ←  5 rules: secrets, privilege escalation
-│   ├── ansible_idempotency.yaml              ←  7 rules: FQCN, state, error handling
-│   ├── ansible_style.yaml                    ←  7 rules: formatting, booleans
-│   ├── ansible_security_kics_aws.yaml        ← 15 rules: AWS cloud security (KICS)
-│   └── ansible_security_kics_azure_gcp.yaml  ← 13 rules: Azure, GCP, ansible.cfg (KICS)
+├── requirements.txt
+├── rules/                                    ← 211 rules across 22 files
+│   ├── ansible_*.yaml                        ← 7 Ansible rule files (55 rules)
+│   ├── bash_*.yaml                           ← 5 Bash rule files (54 rules)
+│   ├── powershell_*.yaml                     ← 5 PowerShell rule files (53 rules)
+│   └── jenkinsfile_*.yaml                    ← 4 Jenkinsfile rule files (40 rules + 8 hardcoding)
 ├── vscode-extension/
-│   ├── ansible-code-reviewer-1.0.0.vsix      ← Install this in VS Code
-│   └── src/extension.ts                       ← Extension source (TypeScript)
-├── sample_playbooks/
-│   ├── bad_example.yml                        ← Triggers most rules
-│   └── good_example.yml                       ← Compliant reference
-├── rules_template.md                          ← Write new rules in plain English
-├── rules_template.docx                        ← Word version of rules template
-└── .vscode/tasks.json                         ← Fallback tasks (no extension needed)
+│   └── iac-quality-reviewer-1.1.0.vsix       ← ← Install this (Step 3)
+├── sample_playbooks/                          ← Test files (yml, sh, ps1, Jenkinsfile)
+├── rules_template.md / rules_template.docx   ← Write custom rules in plain English
+└── PUSH_TO_GITHUB.sh                          ← Push updates to GitHub
 ```
-
----
-
-## Rule Summary (56 total)
-
-| Category | Count | Source |
-|---|---|---|
-| Naming Conventions | 5 | Team standards |
-| Security (general) | 5 | Team standards |
-| Idempotency & Structure | 7 | Team standards |
-| Style & Formatting | 7 | Team standards |
-| Cloud Security — AWS | 15 | KICS / Checkmarx |
-| Cloud Security — Azure | 8 | KICS / Checkmarx |
-| Cloud Security — GCP | 4 | KICS / Checkmarx |
-| Ansible Config Security | 5 | KICS / Checkmarx |
 
 ---
 
 ## Adding Your Own Rules
 
 1. Fill in `rules_template.md` or `rules_template.docx` in **plain English**
-2. Upload the filled template → receive ready-to-use YAML rules file
-3. Drop it in `rules/` — picked up on next run automatically
+2. Upload it → receive a ready-to-use YAML rules file
+3. Drop the file in `rules/` — picked up automatically on next run
 
 ---
 
 ## Jenkins Integration
 
 ```groovy
-stage('Ansible Code Review') {
+stage('IaC Quality Review') {
     steps {
         sh 'pip3 install -r requirements.txt'
         sh 'python3 reviewer.py ./ansible/ --min-severity error --output reports/review.html'
     }
     post {
         always {
-            publishHTML(target: [reportName: 'Ansible Review', reportDir: 'reports',
+            publishHTML(target: [reportName: 'IaC Review', reportDir: 'reports',
                                  reportFiles: 'review.html', keepAll: true])
         }
     }
@@ -152,26 +211,11 @@ Exits `1` on critical/error → fails the stage automatically.
 
 ---
 
-## Severity Guide
+## Pushing Updates to GitHub
 
-| Level | Meaning | Jenkins |
-|---|---|---|
-| `critical` | Security risk / must fix before merge | ❌ Fails build |
-| `error` | Clear standards violation | ❌ Fails build |
-| `warning` | Best practice not followed | ✅ Passes |
-| `info` | Style / documentation suggestion | ✅ Passes |
-
----
-
-## Roadmap
-
-- [x] Ansible playbooks/roles/tasks
-- [x] VS Code extension with inline diagnostics
-- [x] HTML report
-- [x] Jenkins integration
-- [x] KICS/Checkmarx security rules (AWS, Azure, GCP)
-- [ ] Bash shell script rules
-- [ ] PowerShell script rules
-- [ ] Jenkins/Groovy pipeline rules
-- [ ] AAP-specific rules
-- [ ] Inline suppression comments (`# noqa ANS-SEC-001`)
+```bash
+cd InfrastructureAsCodeQualityCheck
+git add -A
+git commit -m "describe your change"
+bash PUSH_TO_GITHUB.sh
+```

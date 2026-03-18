@@ -1,0 +1,222 @@
+category: Jenkinsfile - Linting & Style
+technology: jenkinsfile
+description: >
+  Linting and style rules for Jenkins declarative and scripted pipelines.
+  Covers pipeline structure, stage naming, agent declarations, options,
+  and readability standards that ensure consistent, maintainable pipelines.
+rules:
+
+  - id: JNK-LINT-001
+    name: Use declarative pipeline syntax
+    severity: warning
+    description: "Prefer declarative pipeline syntax (pipeline { }) over scripted syntax (node { }) for new pipelines."
+    rationale: "Declarative syntax enforces a consistent structure, supports built-in validation, integrates with Blue Ocean and pipeline visualization, and is easier to read and maintain than scripted pipelines."
+    match_type: regex
+    target: any
+    pattern: "^\\s*node\\s*\\{"
+    exclude_pattern: "//|pipeline\\s*\\{"
+    example_bad: |
+      node {
+        stage('Build') {
+          sh 'mvn package'
+        }
+      }
+    example_good: |
+      pipeline {
+        agent any
+        stages {
+          stage('Build') {
+            steps { sh 'mvn package' }
+          }
+        }
+      }
+
+  - id: JNK-LINT-002
+    name: Every pipeline must declare an agent
+    severity: error
+    description: "Every declarative pipeline must have a top-level 'agent' directive defining where the pipeline runs."
+    rationale: "Without an agent declaration, Jenkins cannot determine where to allocate the pipeline executor, causing the build to fail or run on an unpredictable node."
+    match_type: file_missing_pattern
+    required_pattern: "^\\s*agent\\s+"
+    search_lines: 20
+    example_bad: |
+      pipeline {
+        stages {
+          stage('Build') { steps { sh 'make' } }
+        }
+      }
+    example_good: |
+      pipeline {
+        agent { label 'linux-build' }
+        stages {
+          stage('Build') { steps { sh 'make' } }
+        }
+      }
+
+  - id: JNK-LINT-003
+    name: Avoid agent any in production pipelines
+    severity: warning
+    description: "Production pipelines must use a specific agent label rather than 'agent any'. Reserve 'agent any' for testing pipelines only."
+    rationale: "agent any runs on any available node, which may have different tools, OS versions, or configurations. Production builds must run on consistently configured nodes to ensure reproducible results."
+    match_type: regex
+    target: any
+    pattern: "^\\s*agent\\s+any\\s*$"
+    exclude_pattern: "//"
+    example_bad: |
+      pipeline {
+        agent any
+    example_good: |
+      pipeline {
+        agent { label 'linux-java11-build' }
+
+  - id: JNK-LINT-004
+    name: All stages must have descriptive names
+    severity: error
+    description: "Every stage must have a meaningful, descriptive name that describes the work being done. Avoid generic names like 'Stage 1', 'Step', 'Test'."
+    rationale: "Stage names appear in Jenkins UI, Blue Ocean, and build notifications. Generic names make it impossible to understand pipeline progress at a glance or identify which stage a failure occurred in."
+    match_type: regex
+    target: any
+    pattern: "stage\\s*\\(\\s*['\"]\\s*(Stage|Step|Task|Run|Do|Phase|Part|Section)\\s*\\d*\\s*['\"]"
+    flags: IGNORECASE
+    exclude_pattern: "//"
+    example_bad: |
+      stage('Stage 1') { ... }
+      stage('Test') { ... }
+      stage('Run') { ... }
+    example_good: |
+      stage('Unit Tests') { ... }
+      stage('Build Docker Image') { ... }
+      stage('Deploy to Staging') { ... }
+
+  - id: JNK-LINT-005
+    name: Pipeline must define timeout in options
+    severity: error
+    description: "Every pipeline must include a global timeout in the options block to prevent hung builds from consuming executor resources indefinitely."
+    rationale: "Without a timeout, a hung build (e.g. waiting for user input, stuck process, network issue) blocks the executor forever. Always define a maximum reasonable duration with timeout() in options."
+    match_type: file_missing_pattern
+    required_pattern: "timeout\\s*\\("
+    search_lines: 999
+    example_bad: |
+      pipeline {
+        agent any
+        stages {
+          stage('Deploy') { steps { sh './deploy.sh' } }
+        }
+      }
+    example_good: |
+      pipeline {
+        agent any
+        options {
+          timeout(time: 30, unit: 'MINUTES')
+          buildDiscarder(logRotator(numToKeepStr: '10'))
+        }
+        stages { ... }
+      }
+
+  - id: JNK-LINT-006
+    name: Pipeline must configure build discarder
+    severity: warning
+    description: "Use buildDiscarder in options to limit the number of stored builds and prevent disk exhaustion on the Jenkins master."
+    rationale: "Without build discarder, Jenkins retains all build artifacts and logs forever. On active pipelines this eventually exhausts disk space on the controller, causing all builds to fail."
+    match_type: file_missing_pattern
+    required_pattern: "buildDiscarder"
+    search_lines: 999
+    example_bad: |
+      pipeline {
+        options {
+          timeout(time: 30, unit: 'MINUTES')
+        }
+    example_good: |
+      pipeline {
+        options {
+          timeout(time: 30, unit: 'MINUTES')
+          buildDiscarder(logRotator(numToKeepStr: '10', artifactNumToKeepStr: '5'))
+        }
+
+  - id: JNK-LINT-007
+    name: Use environment block for environment variables
+    severity: warning
+    description: "Environment variables used across multiple stages must be declared in the pipeline-level environment block, not hardcoded inline in each stage."
+    rationale: "Declaring variables in the environment block makes them discoverable, centrally managed, and avoids repeating the same value in multiple stages where they can drift out of sync."
+    match_type: regex
+    target: any
+    pattern: "sh\\s+['\"].*export\\s+[A-Z_]+=|bat\\s+['\"].*set\\s+[A-Z_]+="
+    exclude_pattern: "//"
+    example_bad: |
+      steps {
+        sh "export APP_ENV=production && ./deploy.sh"
+      }
+    example_good: |
+      environment {
+        APP_ENV = 'production'
+      }
+      stages {
+        stage('Deploy') {
+          steps { sh './deploy.sh' }
+        }
+      }
+
+  - id: JNK-LINT-008
+    name: Each stage should have a single responsibility
+    severity: info
+    description: "Stages should be focused on a single responsibility. Avoid combining unrelated steps (e.g. build + deploy) into one stage."
+    rationale: "Single-responsibility stages make pipelines easier to understand, allow parallel execution, give clearer failure attribution in build reports, and can be individually retried."
+    match_type: regex
+    target: any
+    pattern: "stage\\s*\\(['\"][^'\"]{40,}['\"]\\)"
+    exclude_pattern: "//"
+    example_bad: |
+      stage('Build and test and deploy to staging and notify team') { ... }
+    example_good: |
+      stage('Build') { ... }
+      stage('Unit Tests') { ... }
+      stage('Deploy to Staging') { ... }
+      stage('Notify Team') { ... }
+
+  - id: JNK-LINT-009
+    name: Use skipDefaultCheckout when doing custom checkout
+    severity: info
+    description: "If performing a custom checkout inside a stage, use skipDefaultCheckout() in options to prevent Jenkins doing a redundant default checkout."
+    rationale: "Without skipDefaultCheckout, Jenkins performs a default SCM checkout on every agent before your pipeline steps run. If you are doing a custom checkout, the default checkout wastes time and can conflict."
+    match_type: regex
+    target: any
+    pattern: "checkout\\s+(scm|\\[)"
+    require_nearby: "skipDefaultCheckout"
+    exclude_pattern: "//"
+    example_bad: |
+      pipeline {
+        agent any
+        stages {
+          stage('Checkout') {
+            steps { checkout scm }
+          }
+        }
+      }
+    example_good: |
+      pipeline {
+        agent any
+        options { skipDefaultCheckout(true) }
+        stages {
+          stage('Checkout') {
+            steps { checkout scm }
+          }
+        }
+      }
+
+  - id: JNK-LINT-010
+    name: Avoid long inline shell scripts in Jenkinsfile
+    severity: warning
+    description: "Shell commands in Jenkinsfile steps should not exceed 5 lines. Extract complex logic to versioned shell scripts or Makefiles."
+    rationale: "Long inline shell in Jenkinsfile cannot be unit tested, version-controlled independently, or reused outside Jenkins. Complex logic belongs in dedicated scripts that developers can test locally."
+    match_type: regex
+    target: any
+    pattern: "sh\\s+['\"]\\s*[^'\"]{200,}"
+    exclude_pattern: "//"
+    example_bad: |
+      sh """
+        cd /opt/app && git pull && mvn clean package -DskipTests && \
+        cp target/*.jar /opt/deploy/ && systemctl restart myapp && \
+        sleep 10 && curl -f http://localhost:8080/health || exit 1
+      """
+    example_good: |
+      sh './scripts/build_and_deploy.sh'
