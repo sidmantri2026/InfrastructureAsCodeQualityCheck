@@ -1,0 +1,192 @@
+category: Bash - Idempotency
+technology: bash
+description: >
+  Idempotency rules for Linux bash shell scripts.
+  An idempotent script produces the same result whether run once or many times.
+  These rules enforce guard checks before creating, modifying, or deleting
+  resources so re-runs are safe and do not cause unintended side effects.
+rules:
+
+  - id: BASH-IDEM-001
+    name: Check before creating directories
+    severity: error
+    description: "Use 'mkdir -p' or check with '[ -d ]' before creating directories. Never call 'mkdir' without -p or a prior existence check."
+    rationale: "Plain 'mkdir' fails with an error if the directory already exists, breaking re-runs. Using 'mkdir -p' silently succeeds if the directory is already present, making the operation idempotent."
+    match_type: regex
+    target: any
+    pattern: "\\bmkdir\\b(?!\\s+-p)(?!\\s+-[a-zA-Z]*p)"
+    exclude_pattern: "#|mkdir\\s+-p|mkdir\\s+-[a-zA-Z]*p"
+    example_bad: |
+      mkdir /opt/myapp/logs
+      mkdir /etc/myapp
+    example_good: |
+      mkdir -p /opt/myapp/logs
+      mkdir -p /etc/myapp
+      # Or with an explicit check:
+      [[ -d /opt/myapp/logs ]] || mkdir /opt/myapp/logs
+
+  - id: BASH-IDEM-002
+    name: Check before creating files
+    severity: warning
+    description: "Before creating a file with '>', check whether it already exists and contains the expected content. Unconditional writes overwrite files on every run."
+    rationale: "Unconditionally redirecting output to a file changes its modification time and content on every run, even when nothing has changed. This triggers downstream watchers, invalidates caches, and causes unnecessary restarts."
+    match_type: regex
+    target: any
+    pattern: "^\\s*(?:echo|printf|cat|tee)\\s+.*>(?!>)\\s*['\"]?/(?!dev/null)"
+    exclude_pattern: "#|TMPFILE|mktemp|/tmp/|/var/log/"
+    example_bad: |
+      echo "[Unit]" > /etc/systemd/system/myapp.service
+      printf "server=127.0.0.1\n" > /etc/myapp/config.conf
+    example_good: |
+      DESIRED="server=127.0.0.1"
+      if [[ "$(cat /etc/myapp/config.conf 2>/dev/null)" != "$DESIRED" ]]; then
+        printf "%s\n" "$DESIRED" > /etc/myapp/config.conf
+      fi
+
+  - id: BASH-IDEM-003
+    name: Check before adding lines to files
+    severity: warning
+    description: "Use grep to check whether a line already exists before appending it to a file with '>>'."
+    rationale: "Appending without checking causes duplicate entries on every re-run. Config files with duplicate lines can cause undefined behaviour, parse errors, or security issues (e.g. duplicate sudoers or hosts entries)."
+    match_type: regex
+    target: any
+    pattern: ">>\\s*['\"]?/etc/|>>\\s*['\"]?/opt/|>>\\s*['\"]?~/"
+    exclude_pattern: "#|grep|if\\s+|\\[\\["
+    example_bad: |
+      echo "export PATH=\$PATH:/opt/myapp/bin" >> ~/.bashrc
+      echo "192.168.1.10 myserver" >> /etc/hosts
+    example_good: |
+      if ! grep -qF "export PATH=\$PATH:/opt/myapp/bin" ~/.bashrc; then
+        echo "export PATH=\$PATH:/opt/myapp/bin" >> ~/.bashrc
+      fi
+      if ! grep -qF "192.168.1.10 myserver" /etc/hosts; then
+        echo "192.168.1.10 myserver" >> /etc/hosts
+      fi
+
+  - id: BASH-IDEM-004
+    name: Check before installing packages
+    severity: error
+    description: "Before installing packages with apt, yum, dnf, or pip, check whether they are already installed to avoid unnecessary re-installation and package manager locks."
+    rationale: "Running package managers unconditionally on every script execution is slow, requires network access, and can fail due to lock files or rate limits. Checking first makes the script faster and safer to re-run."
+    match_type: regex
+    target: any
+    pattern: "^\\s*(apt-get|apt)\\s+install(?!.*-y.*dpkg)|^\\s*yum\\s+install(?!.*-y)|^\\s*dnf\\s+install(?!.*-y)|^\\s*pip[23]?\\s+install(?!.*--upgrade)"
+    exclude_pattern: "#|dpkg -l|rpm -q|pip.*show|which|command -v"
+    example_bad: |
+      apt-get install -y nginx
+      pip3 install ansible
+    example_good: |
+      if ! dpkg -l nginx &>/dev/null; then
+        apt-get install -y nginx
+      fi
+      if ! pip3 show ansible &>/dev/null; then
+        pip3 install ansible
+      fi
+
+  - id: BASH-IDEM-005
+    name: Check before adding users or groups
+    severity: error
+    description: "Before creating users with 'useradd' or groups with 'groupadd', check whether they already exist using 'id' or 'getent'."
+    rationale: "useradd and groupadd fail with an error if the user or group already exists. Without a guard check, re-running the script causes failures and may abort remaining setup steps."
+    match_type: regex
+    target: any
+    pattern: "^\\s*(useradd|groupadd)\\s+"
+    exclude_pattern: "#|id\\s+|getent\\s+|if\\s+"
+    example_bad: |
+      useradd -m -s /bin/bash appuser
+      groupadd appgroup
+    example_good: |
+      if ! id -u appuser &>/dev/null; then
+        useradd -m -s /bin/bash appuser
+      fi
+      if ! getent group appgroup &>/dev/null; then
+        groupadd appgroup
+      fi
+
+  - id: BASH-IDEM-006
+    name: Check before downloading files
+    severity: warning
+    description: "Before downloading a file with curl or wget, check whether the file already exists and is complete. Avoid unconditional downloads on every run."
+    rationale: "Unconditional downloads waste bandwidth, slow re-runs, and can fail due to rate limiting or network unavailability. Checking file existence first makes the operation idempotent and faster."
+    match_type: regex
+    target: any
+    pattern: "^\\s*(curl|wget)\\s+.*-[oO]\\s+"
+    exclude_pattern: "#|\\[\\s+-f|if\\s+\\[\\[\\s+-f|-z\\s+|\\$\\(.*test"
+    example_bad: |
+      curl -o /opt/agent/agent.tar.gz https://releases.example.com/agent-1.0.tar.gz
+      wget -O /usr/local/bin/kubectl https://dl.k8s.io/v1.28.0/bin/linux/amd64/kubectl
+    example_good: |
+      if [[ ! -f /opt/agent/agent.tar.gz ]]; then
+        curl -o /opt/agent/agent.tar.gz https://releases.example.com/agent-1.0.tar.gz
+      fi
+
+  - id: BASH-IDEM-007
+    name: Check before starting or enabling services
+    severity: warning
+    description: "Before starting or enabling a service with systemctl, check its current status to avoid unnecessary restarts."
+    rationale: "Unconditionally calling 'systemctl start' when a service is already running causes an unnecessary restart and service interruption. Always check status before starting."
+    match_type: regex
+    target: any
+    pattern: "^\\s*systemctl\\s+(start|enable)\\s+"
+    exclude_pattern: "#|systemctl\\s+is-|if\\s+|status"
+    example_bad: |
+      systemctl start nginx
+      systemctl enable nginx
+    example_good: |
+      if ! systemctl is-active --quiet nginx; then
+        systemctl start nginx
+      fi
+      if ! systemctl is-enabled --quiet nginx; then
+        systemctl enable nginx
+      fi
+
+  - id: BASH-IDEM-008
+    name: Check before creating symlinks
+    severity: warning
+    description: "Before creating a symlink with 'ln -s', check whether it already exists. Use 'ln -sf' for force-replace, or guard with '[ -L ]'."
+    rationale: "'ln -s' fails if the symlink already exists. Use 'ln -sf' to replace, or check with '-L' first. Without this, re-runs fail at the symlink step and skip remaining operations."
+    match_type: regex
+    target: any
+    pattern: "^\\s*ln\\s+-s(?!f)\\s+"
+    exclude_pattern: "#"
+    example_bad: |
+      ln -s /opt/myapp/current /usr/local/bin/myapp
+    example_good: |
+      ln -sf /opt/myapp/current /usr/local/bin/myapp
+      # Or with guard:
+      [[ -L /usr/local/bin/myapp ]] || ln -s /opt/myapp/current /usr/local/bin/myapp
+
+  - id: BASH-IDEM-009
+    name: Use --force or check before chmod/chown on existing paths
+    severity: info
+    description: "When applying chmod or chown, consider checking the current permissions first to avoid unnecessary changes and audit log noise."
+    rationale: "Unconditional chmod/chown triggers audit events and file-modification timestamps on every run, even when nothing changes. For scripts run frequently, this creates noise in security monitoring systems."
+    match_type: regex
+    target: any
+    pattern: "^\\s*(chmod|chown)\\s+"
+    exclude_pattern: "#|if\\s+|stat\\s+"
+    example_bad: |
+      chmod 755 /usr/local/bin/myapp
+      chown root:root /etc/myapp/config
+    example_good: |
+      CURRENT_MODE=$(stat -c '%a' /usr/local/bin/myapp 2>/dev/null)
+      if [[ "$CURRENT_MODE" != "755" ]]; then
+        chmod 755 /usr/local/bin/myapp
+      fi
+
+  - id: BASH-IDEM-010
+    name: Deletions must be guarded with existence checks
+    severity: error
+    description: "Before deleting files or directories, check that they exist. Never use 'rm -rf' without verifying the target exists and is the expected path."
+    rationale: "Running 'rm -rf' on a path that does not exist fails silently (with -f) but produces errors otherwise. More critically, deleting without checking the target is what you expect can cause catastrophic data loss on re-runs after partial state changes."
+    match_type: regex
+    target: any
+    pattern: "^\\s*rm\\s+(-rf|-fr|-r)\\s+[^$]"
+    exclude_pattern: "#|\\[\\[\\s+-[de]|if\\s+\\[|\\$\\(|TMPFILE|mktemp|/tmp/"
+    example_bad: |
+      rm -rf /opt/myapp/old_release
+      rm -rf /var/cache/myapp
+    example_good: |
+      if [[ -d /opt/myapp/old_release ]]; then
+        rm -rf /opt/myapp/old_release
+      fi

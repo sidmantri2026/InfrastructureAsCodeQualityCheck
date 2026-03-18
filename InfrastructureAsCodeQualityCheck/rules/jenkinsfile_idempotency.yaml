@@ -1,0 +1,154 @@
+category: Jenkinsfile - Idempotency
+technology: jenkinsfile
+description: >
+  Idempotency rules for Jenkins pipelines.
+  Pipelines must produce the same result when re-run and must not
+  accumulate stale state between runs.
+rules:
+
+  - id: JNK-IDEM-001
+    name: Clean workspace before build
+    severity: error
+    description: "Pipelines must clean the workspace at the start (cleanWs() in post or deleteDir()) to prevent stale artifacts from previous runs affecting current builds."
+    rationale: "Leftover artifacts, compiled outputs, or config files from previous runs can cause builds to pass when they should fail (using a cached artifact) or fail when they should pass (stale lock files, corrupt caches)."
+    match_type: file_missing_pattern
+    required_pattern: "cleanWs\\(\\)|deleteDir\\(\\)|clean:\\s*true"
+    search_lines: 999
+    example_bad: |
+      pipeline {
+        agent any
+        stages {
+          stage('Build') { steps { sh 'mvn package' } }
+        }
+      }
+    example_good: |
+      pipeline {
+        agent any
+        options { skipDefaultCheckout(true) }
+        stages {
+          stage('Checkout') {
+            steps {
+              cleanWs()
+              checkout scm
+            }
+          }
+        }
+        post { always { cleanWs() } }
+      }
+
+  - id: JNK-IDEM-002
+    name: Use stash/unstash instead of relying on workspace persistence
+    severity: warning
+    description: "Artifacts passed between stages on different agents must use stash/unstash, not assume workspace persistence."
+    rationale: "When stages run on different agents, the workspace is not shared. Assuming the file exists because a previous stage created it causes intermittent failures that are environment-dependent and hard to reproduce."
+    match_type: regex
+    target: any
+    pattern: "agent\\s*\\{\\s*label"
+    require_nearby: "stash|unstash|archiveArtifacts|copyArtifacts"
+    exclude_pattern: "//"
+    example_bad: |
+      stage('Build') {
+        agent { label 'build-node' }
+        steps { sh 'mvn package' }
+      }
+      stage('Test') {
+        agent { label 'test-node' }
+        steps { sh 'mvn test' }  // target/app.jar may not exist here
+      }
+    example_good: |
+      stage('Build') {
+        agent { label 'build-node' }
+        steps {
+          sh 'mvn package'
+          stash name: 'app-jar', includes: 'target/*.jar'
+        }
+      }
+      stage('Test') {
+        agent { label 'test-node' }
+        steps {
+          unstash 'app-jar'
+          sh 'mvn test'
+        }
+      }
+
+  - id: JNK-IDEM-003
+    name: Pin dependency versions in pipeline tools
+    severity: error
+    description: "Tool versions declared in the tools block must use specific pinned versions, not aliases like 'default' or 'latest'."
+    rationale: "Using 'default' or unpinned tool versions means the build uses whatever version is currently set as default on the Jenkins master. This changes without notice and breaks reproducibility."
+    match_type: regex
+    target: any
+    pattern: "tools\\s*\\{[^}]*(default|latest|current|auto)[^}]*\\}"
+    flags: IGNORECASE
+    exclude_pattern: "//"
+    example_bad: |
+      tools {
+        maven 'default'
+        jdk   'latest'
+      }
+    example_good: |
+      tools {
+        maven 'Maven-3.9.4'
+        jdk   'OpenJDK-17.0.8'
+      }
+
+  - id: JNK-IDEM-004
+    name: Avoid writing to workspace root without cleanup
+    severity: warning
+    description: "Files written to the workspace during a build that are not stashed or archived must be cleaned up. Do not leave build outputs in the workspace between runs."
+    rationale: "Workspace files that are not cleaned up persist across runs. On the next run, a stage may find the file already present and skip creation, or use stale data, leading to non-deterministic builds."
+    match_type: regex
+    target: any
+    pattern: "(sh|bat)\\s+['\"].*>\\s*[a-zA-Z0-9_-]+\\.(txt|log|json|xml|yaml|yml)"
+    require_nearby: "cleanWs|deleteDir|post\\s*\\{"
+    exclude_pattern: "//"
+    example_bad: |
+      sh 'terraform plan > plan_output.txt'
+      // plan_output.txt accumulates across builds
+    example_good: |
+      sh 'terraform plan > plan_output.txt'
+      archiveArtifacts artifacts: 'plan_output.txt'
+      // And in post block:
+      post { always { cleanWs() } }
+
+  - id: JNK-IDEM-005
+    name: Use when conditions for environment-specific stages
+    severity: error
+    description: "Stages that only apply to specific branches or environments must use 'when' conditions to skip safely when not applicable, rather than failing or requiring manual intervention."
+    rationale: "Without 'when' conditions, deployment stages run on every branch including feature branches, potentially deploying unreviewed code to production or staging environments."
+    match_type: regex
+    target: any
+    pattern: "stage\\s*\\(['\"][^'\"]*[Dd]eploy[^'\"]*['\"]\\)\\s*\\{"
+    require_nearby: "when\\s*\\{"
+    exclude_pattern: "//"
+    example_bad: |
+      stage('Deploy to Staging') {
+        steps {
+          sh './deploy.sh --env=staging'
+        }
+      }
+    example_good: |
+      stage('Deploy to Staging') {
+        when {
+          branch 'develop'
+          not { changeRequest() }
+        }
+        steps {
+          sh './deploy.sh --env=staging'
+        }
+      }
+
+  - id: JNK-IDEM-006
+    name: Parameterise environment names instead of hardcoding
+    severity: error
+    description: "Environment names, server addresses, and deployment targets must be pipeline parameters or environment variables, not hardcoded strings in stage steps."
+    rationale: "Hardcoded environment names mean the Jenkinsfile must be edited to deploy to a different target. Parameterising allows the same pipeline to be reused for multiple environments without code changes."
+    match_type: regex
+    target: any
+    pattern: "sh\\s+['\"].*--(env|environment|target|host)=(prod|staging|dev|uat|preprod)\\b"
+    flags: IGNORECASE
+    exclude_pattern: "//|params\\.|env\\."
+    example_bad: |
+      sh './deploy.sh --env=production --host=server01.example.com'
+    example_good: |
+      sh "./deploy.sh --env=${params.DEPLOY_ENV} --host=${params.TARGET_HOST}"

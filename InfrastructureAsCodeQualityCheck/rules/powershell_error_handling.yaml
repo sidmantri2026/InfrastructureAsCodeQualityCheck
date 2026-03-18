@@ -1,0 +1,259 @@
+category: PowerShell - Error Handling
+technology: powershell
+description: >
+  Error handling rules for Windows PowerShell scripts (.ps1).
+  Covers $ErrorActionPreference, try/catch/finally, exit codes,
+  logging, input validation, and patterns that silently swallow failures.
+rules:
+
+  - id: PS-ERR-001
+    name: Set $ErrorActionPreference to Stop at script top
+    severity: error
+    description: 'Scripts must set \$ErrorActionPreference = ''Stop'' near the top so that non-terminating errors become terminating errors caught by try/catch.'
+    rationale: "PowerShell's default ErrorActionPreference is 'Continue', meaning cmdlet errors are printed but do not stop execution. Scripts can run to completion while silently failing dozens of operations. Setting 'Stop' ensures every error is treated as a breaking failure."
+    match_type: file_missing_pattern
+    required_pattern: "\\$ErrorActionPreference\\s*=\\s*['\"]Stop['\"]"
+    search_lines: 25
+    example_bad: |
+      # No ErrorActionPreference — errors are ignored
+      Copy-Item -Path $Source -Destination $Dest
+      Start-Service -Name 'MyApp'
+    example_good: |
+      #Requires -Version 5.1
+      $ErrorActionPreference = 'Stop'
+
+      Copy-Item -Path $Source -Destination $Dest
+      Start-Service -Name 'MyApp'
+
+  - id: PS-ERR-002
+    name: Wrap all external calls in try/catch blocks
+    severity: error
+    description: "All cmdlet calls and external program invocations that can fail must be wrapped in try/catch blocks with meaningful error handling in the catch."
+    rationale: "Without try/catch, errors terminate the script with no cleanup, no context, and no actionable message. Structured error handling allows logging the error with context, performing rollback, and exiting with a specific code."
+    match_type: file_missing_pattern
+    required_pattern: "try\\s*\\{"
+    search_lines: 999
+    example_bad: |
+      $ErrorActionPreference = 'Stop'
+      Invoke-Command -ComputerName $Server -ScriptBlock { ... }
+      Copy-Item -Path $Source -Destination $Dest
+    example_good: |
+      $ErrorActionPreference = 'Stop'
+      try {
+          Invoke-Command -ComputerName $Server -ScriptBlock { ... }
+          Copy-Item -Path $Source -Destination $Dest
+      }
+      catch {
+          Write-Error "Deployment failed: $_"
+          exit 1
+      }
+
+  - id: PS-ERR-003
+    name: Catch blocks must not be empty
+    severity: critical
+    description: "catch {} blocks must not be empty. They must contain at minimum an error log and an exit or throw."
+    rationale: "An empty catch block silently swallows the error — this is the PowerShell equivalent of ignoring the error entirely but with the false impression that it is 'handled'. This is one of the most dangerous patterns in automation scripts."
+    match_type: regex
+    target: any
+    pattern: "catch\\s*\\{\\s*\\}"
+    exclude_pattern: "#"
+    example_bad: |
+      try {
+          Deploy-Application -Environment $env
+      }
+      catch { }
+    example_good: |
+      try {
+          Deploy-Application -Environment $env
+      }
+      catch {
+          Write-Error "Deployment failed for environment '$env': $_"
+          exit 1
+      }
+
+  - id: PS-ERR-004
+    name: Scripts must exit with non-zero code on failure
+    severity: error
+    description: "Scripts that encounter a fatal error must exit with a non-zero exit code using 'exit 1' (or a specific non-zero value). Do not let scripts exit with 0 after an error."
+    rationale: "CI/CD systems, Jenkins, and calling scripts use the exit code to determine success or failure. A script that exits 0 after an error tells the caller everything succeeded, preventing any failure gating from working."
+    match_type: regex
+    target: any
+    pattern: "catch\\s*\\{[^}]*\\}"
+    require_nearby: "exit\\s+[1-9]|throw\\s+|exit\\s+\\$"
+    example_bad: |
+      catch {
+          Write-Error "Something went wrong: $_"
+          # No exit — calling process sees success
+      }
+    example_good: |
+      catch {
+          Write-Error "Something went wrong: $_"
+          exit 1
+      }
+
+  - id: PS-ERR-005
+    name: Use finally for resource cleanup
+    severity: warning
+    description: "Scripts that acquire resources (open files, connections, temp files) must use a finally block to guarantee cleanup runs regardless of success or failure."
+    rationale: "Without finally, a script that throws an exception skips cleanup code placed after the try/catch. finally always runs, ensuring resources like temp files, open handles, and remote sessions are released even when errors occur."
+    match_type: regex
+    target: any
+    pattern: "\\$Temp|New-TemporaryFile|\\[System\\.IO\\.Path\\]::GetTempFileName|New-PSSession|Open-SqlConnection"
+    require_nearby: "finally\\s*\\{"
+    exclude_pattern: "#"
+    example_bad: |
+      try {
+          $TempFile = New-TemporaryFile
+          Process-Data -InputFile $TempFile
+      }
+      catch {
+          Write-Error $_; exit 1
+      }
+      # TempFile never deleted if exception occurs
+      Remove-Item $TempFile
+    example_good: |
+      $TempFile = $null
+      try {
+          $TempFile = New-TemporaryFile
+          Process-Data -InputFile $TempFile
+      }
+      catch {
+          Write-Error $_; exit 1
+      }
+      finally {
+          if ($TempFile) { Remove-Item $TempFile -Force -ErrorAction SilentlyContinue }
+      }
+
+  - id: PS-ERR-006
+    name: Validate mandatory parameters before processing
+    severity: error
+    description: "Scripts and functions must validate parameter values at the start using ValidateNotNullOrEmpty, ValidateSet, or explicit if checks before any operations are performed."
+    rationale: "Discovering an invalid parameter value halfway through a script leaves the system in a partially-modified state. Fail fast with a clear error message before making any changes."
+    match_type: regex
+    target: any
+    pattern: "param\\s*\\("
+    require_nearby: "Mandatory=\\$true|ValidateNotNullOrEmpty|ValidateSet|ValidatePattern|\\[ValidateRange"
+    example_bad: |
+      param(
+          $Environment,
+          $Version
+      )
+      # No validation — continues with null/empty values
+      Deploy-App -Env $Environment -Version $Version
+    example_good: |
+      param(
+          [Parameter(Mandatory=$true)]
+          [ValidateSet('dev','staging','prod')]
+          [string]$Environment,
+
+          [Parameter(Mandatory=$true)]
+          [ValidatePattern('^\d+\.\d+\.\d+$')]
+          [string]$Version
+      )
+
+  - id: PS-ERR-007
+    name: Log errors with full context using Write-Error or structured logging
+    severity: warning
+    description: 'Error messages in catch blocks must include the exception message (\$_), the operation that failed, and any relevant context variables.'
+    rationale: 'A catch block that only logs ''An error occurred'' is useless for diagnosis. Including the exception object (\$_), the operation being attempted, and relevant variable values makes log messages immediately actionable.'
+    match_type: regex
+    target: any
+    pattern: "catch\\s*\\{[^}]*Write-Error\\s+['\"][^$_][^'\"]{0,20}['\"]"
+    exclude_pattern: "#"
+    example_bad: |
+      catch {
+          Write-Error "An error occurred"
+      }
+    example_good: |
+      catch {
+          Write-Error "Failed to deploy '$AppName' to '$Environment': $_"
+      }
+
+  - id: PS-ERR-008
+    name: Do not use -ErrorAction SilentlyContinue on critical operations
+    severity: error
+    description: "Do not use -ErrorAction SilentlyContinue on operations that are critical to script success (Copy-Item, Invoke-Command, Start-Service, Invoke-RestMethod)."
+    rationale: "SilentlyContinue suppresses both the error message and the failure, making it completely invisible. Using it on critical operations means failures never surface and the script appears to have succeeded."
+    match_type: regex
+    target: any
+    pattern: "(Copy-Item|Move-Item|Invoke-Command|Start-Service|Stop-Service|Invoke-RestMethod|Invoke-WebRequest|Set-Content|Remove-Item\\s+-Recurse).*-ErrorAction\\s+SilentlyContinue"
+    flags: IGNORECASE
+    exclude_pattern: "#"
+    example_bad: |
+      Copy-Item -Path $Source -Destination $Dest -ErrorAction SilentlyContinue
+      Invoke-RestMethod -Uri $ApiUrl -Method Post -ErrorAction SilentlyContinue
+    example_good: |
+      Copy-Item -Path $Source -Destination $Dest -ErrorAction Stop
+      Invoke-RestMethod -Uri $ApiUrl -Method Post -ErrorAction Stop
+
+  - id: PS-ERR-009
+    name: Use Verbose logging for key milestones
+    severity: info
+    description: "Scripts should use Write-Verbose to log key milestones, making script execution traceable when -Verbose is passed by operators."
+    rationale: "Without verbose logging, it is impossible to trace where a long-running script is in its execution. Write-Verbose messages are suppressed in normal runs but visible with -Verbose, giving operators insight without log noise."
+    match_type: file_missing_pattern
+    required_pattern: "Write-Verbose\\s+"
+    search_lines: 999
+    example_bad: |
+      $ErrorActionPreference = 'Stop'
+      try {
+          Deploy-Application -Env $env
+          Run-Migrations
+          Restart-Services
+      }
+      catch { Write-Error $_; exit 1 }
+    example_good: |
+      $ErrorActionPreference = 'Stop'
+      try {
+          Write-Verbose "Starting deployment to $env"
+          Deploy-Application -Env $env
+          Write-Verbose "Running database migrations"
+          Run-Migrations
+          Write-Verbose "Restarting services"
+          Restart-Services
+          Write-Verbose "Deployment complete"
+      }
+      catch { Write-Error "Deployment failed: $_"; exit 1 }
+
+  - id: PS-ERR-010
+    name: Remote calls must handle connection failures explicitly
+    severity: error
+    description: 'Invoke-Command, Enter-PSSession, and other remote calls must explicitly handle connection failures with a try/catch, not just rely on $ErrorActionPreference.'
+    rationale: "Remote connectivity failures produce different error types than standard cmdlet errors. Explicit handling allows the script to retry, report the specific unreachable host, or gracefully skip the host in a multi-host loop."
+    match_type: regex
+    target: any
+    pattern: "^\\s*(Invoke-Command|Enter-PSSession|New-PSSession)\\s+"
+    exclude_pattern: "#|try\\s*\\{|catch"
+    example_bad: |
+      $ErrorActionPreference = 'Stop'
+      Invoke-Command -ComputerName $Server -ScriptBlock { Get-Service }
+    example_good: |
+      try {
+          Invoke-Command -ComputerName $Server -ScriptBlock {
+              Get-Service
+          } -ErrorAction Stop
+      }
+      catch [System.Management.Automation.Remoting.PSRemotingTransportException] {
+          Write-Error "Cannot connect to $Server — check WinRM and network connectivity"
+          exit 1
+      }
+      catch {
+          Write-Error "Remote command failed on $Server: $_"
+          exit 1
+      }
+
+  - id: PS-ERR-011
+    name: Use -Confirm:$false with non-interactive destructive operations
+    severity: warning
+    description: 'Destructive operations in automated scripts must use -Confirm:\$false to prevent prompting for user input, which would hang the script indefinitely in CI/CD.'
+    rationale: 'In non-interactive automation contexts, a cmdlet that prompts for confirmation causes the script to hang indefinitely waiting for user input. Always pass -Confirm:\$false for destructive operations in automated scripts.'
+    match_type: regex
+    target: any
+    pattern: "(Remove-Item|Remove-ADUser|Stop-Computer|Restart-Computer|Clear-Disk|Format-Volume)\\s+(?!.*-Confirm:\\$false)(?!.*-WhatIf)"
+    exclude_pattern: "#|ShouldProcess"
+    example_bad: |
+      Remove-Item -Path $OldDeployPath -Recurse
+      Stop-Computer -ComputerName $Server
+    example_good: |
+      Remove-Item -Path $OldDeployPath -Recurse -Force -Confirm:$false
+      Stop-Computer -ComputerName $Server -Force -Confirm:$false

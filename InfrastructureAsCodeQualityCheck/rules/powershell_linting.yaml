@@ -1,0 +1,217 @@
+category: PowerShell - Linting & Style
+technology: powershell
+description: >
+  Linting and style rules for Windows PowerShell scripts (.ps1).
+  Covers approved verbs, parameter declarations, error handling,
+  output practices, and readability standards.
+rules:
+
+  - id: PS-LINT-001
+    name: Functions must use approved PowerShell verbs
+    severity: error
+    description: "Function names must follow the Verb-Noun pattern using only approved PowerShell verbs (Get, Set, New, Remove, Start, Stop, Invoke, Test, Add, etc.)."
+    rationale: "Using non-approved verbs triggers warnings when importing modules, breaks discoverability, and violates PowerShell naming conventions enforced by PSScriptAnalyzer and the PowerShell Gallery."
+    match_type: regex
+    target: any
+    pattern: "function\\s+(Fetch|Grab|Do|Run|Make|Build|Check|Handle|Process|Execute|Perform|Change|Delete|Create|Update|Kill|Show|Hide|Load|Save|Read|Write|Log|Print|Send|Receive)[-\\s]"
+    flags: IGNORECASE
+    exclude_pattern: "#"
+    example_bad: |
+      function Fetch-UserData { ... }
+      function Check-ServiceStatus { ... }
+      function Delete-OldLogs { ... }
+    example_good: |
+      function Get-UserData { ... }
+      function Test-ServiceStatus { ... }
+      function Remove-OldLogs { ... }
+
+  - id: PS-LINT-002
+    name: Scripts and functions must use CmdletBinding
+    severity: warning
+    description: "Functions intended as cmdlets must include [CmdletBinding()] attribute to support -Verbose, -Debug, -WhatIf, and -ErrorAction."
+    rationale: "Without [CmdletBinding()], functions cannot support common parameters like -Verbose, -ErrorAction, or -WhatIf. These are essential for production automation scripts to behave predictably."
+    match_type: regex
+    target: any
+    pattern: "^function\\s+[A-Z][a-zA-Z]+-[A-Z][a-zA-Z]+"
+    require_nearby: "\\[CmdletBinding"
+    example_bad: |
+      function Get-DeployStatus {
+          param($Environment)
+          ...
+      }
+    example_good: |
+      function Get-DeployStatus {
+          [CmdletBinding()]
+          param(
+              [Parameter(Mandatory=$true)]
+              [string]$Environment
+          )
+          ...
+      }
+
+  - id: PS-LINT-003
+    name: Parameters must be declared with types and attributes
+    severity: warning
+    description: "All function parameters must be explicitly typed and use Parameter() attribute with Mandatory where appropriate."
+    rationale: "Untyped parameters accept any input without validation. Explicit types and Parameter() attributes provide input validation, improve IntelliSense, and make the function interface self-documenting."
+    match_type: regex
+    target: any
+    pattern: "^\\s*param\\s*\\(\\s*\\$"
+    exclude_pattern: "#"
+    example_bad: |
+      param($Server, $Port, $Username)
+    example_good: |
+      param(
+          [Parameter(Mandatory=$true)]
+          [string]$Server,
+          [Parameter(Mandatory=$false)]
+          [int]$Port = 443,
+          [Parameter(Mandatory=$true)]
+          [string]$Username
+      )
+
+  - id: PS-LINT-004
+    name: Use Write-Verbose and Write-Warning, not Write-Host for logging
+    severity: warning
+    description: "Use Write-Verbose, Write-Warning, and Write-Error for output instead of Write-Host in reusable functions."
+    rationale: "Write-Host writes directly to the console and cannot be captured, redirected, or suppressed. Write-Verbose can be toggled with -Verbose, making scripts usable in both interactive and automated contexts."
+    match_type: regex
+    target: any
+    pattern: "Write-Host\\s+"
+    exclude_pattern: "#|#.*Write-Host"
+    example_bad: |
+      Write-Host "Deploying to $Environment..."
+      Write-Host "ERROR: Connection failed" -ForegroundColor Red
+    example_good: |
+      Write-Verbose "Deploying to $Environment..."
+      Write-Error "ERROR: Connection failed"
+
+  - id: PS-LINT-005
+    name: Use single quotes for literal strings
+    severity: info
+    description: "Use single quotes for strings that do not require variable expansion or escape sequences. Reserve double quotes for strings requiring interpolation."
+    rationale: "Single-quoted strings are literal — no variable expansion occurs, preventing accidental interpolation. Using them where possible makes intent clear and avoids subtle bugs from unexpected expansion."
+    match_type: regex
+    target: any
+    pattern: "\"[A-Za-z0-9_\\s/\\\\.:,-]+\""
+    exclude_pattern: "#|\\$|`|Write-|throw|return"
+    example_bad: |
+      $LogPath = "C:\Logs\Deploy"
+      $Status = "Completed"
+    example_good: |
+      $LogPath = 'C:\Logs\Deploy'
+      $Status = 'Completed'
+
+  - id: PS-LINT-006
+    name: Always specify ErrorAction on critical commands
+    severity: warning
+    description: "Critical cmdlets must specify -ErrorAction Stop to ensure errors throw exceptions that can be caught with try/catch."
+    rationale: "Without -ErrorAction Stop, non-terminating errors in cmdlets do not trigger catch blocks in try/catch. This means errors can be silently swallowed, leaving the script in an unknown state."
+    match_type: regex
+    target: any
+    pattern: "(Invoke-Command|Invoke-RestMethod|Invoke-WebRequest|Set-Content|Copy-Item|Remove-Item|Start-Service|Stop-Service)\\s+(?!.*-ErrorAction)"
+    exclude_pattern: "#"
+    example_bad: |
+      Copy-Item -Path $Source -Destination $Dest
+      Invoke-RestMethod -Uri $ApiUrl -Method Post -Body $Body
+    example_good: |
+      Copy-Item -Path $Source -Destination $Dest -ErrorAction Stop
+      Invoke-RestMethod -Uri $ApiUrl -Method Post -Body $Body -ErrorAction Stop
+
+  - id: PS-LINT-007
+    name: Use try/catch/finally for error handling
+    severity: error
+    description: "Scripts that invoke external commands or cmdlets must use try/catch blocks rather than relying on $ErrorActionPreference alone."
+    rationale: "Structured error handling with try/catch provides clean error messages, proper logging, and controlled cleanup. Relying on $ErrorActionPreference alone gives no opportunity to provide context or remediation steps."
+    match_type: file_missing_pattern
+    required_pattern: "try\\s*\\{"
+    exclude_if_pattern: "function\\s+\\w+-\\w+"
+    example_bad: |
+      $ErrorActionPreference = 'Stop'
+      Invoke-Command -ComputerName $Server -ScriptBlock { ... }
+    example_good: |
+      try {
+          Invoke-Command -ComputerName $Server -ScriptBlock { ... } -ErrorAction Stop
+      }
+      catch {
+          Write-Error "Failed to invoke command on $Server: $_"
+          exit 1
+      }
+
+  - id: PS-LINT-008
+    name: Scripts must not exceed 200 lines
+    severity: warning
+    description: "PowerShell scripts longer than 200 lines should be refactored into modules or smaller script files."
+    rationale: "Long scripts are difficult to test, debug, and maintain. Complex logic should be broken into functions in a module (.psm1), making code reusable and individually testable with Pester."
+    match_type: file_length
+    max_lines: 200
+    example_good: |
+      # Split into a module:
+      Import-Module .\DeploymentHelpers.psm1
+      Deploy-Application -Environment $env
+
+  - id: PS-LINT-009
+    name: Use approved output objects not formatted strings
+    severity: info
+    description: "Functions should output objects (PSCustomObject, hashtables) rather than pre-formatted strings, to allow callers to process the data."
+    rationale: "Returning structured objects allows callers to filter, sort, and format output as needed. Returning pre-formatted strings breaks pipelining and makes the function unusable in automated pipelines."
+    match_type: regex
+    target: any
+    pattern: "return\\s+\"[^$]+\\$"
+    exclude_pattern: "#"
+    example_bad: |
+      return "Server: $ServerName Status: $Status"
+    example_good: |
+      return [PSCustomObject]@{
+          ServerName = $ServerName
+          Status     = $Status
+      }
+
+  - id: PS-LINT-010
+    name: Always provide comment-based help for public functions
+    severity: info
+    description: "Public functions (those not prefixed with a private naming convention) must include comment-based help with .SYNOPSIS and .PARAMETER sections."
+    rationale: "Comment-based help is surfaced by Get-Help, providing discoverability for your team. Without it, developers must read the code to understand what a function does and what parameters it accepts."
+    match_type: regex
+    target: any
+    pattern: "^function\\s+[A-Z][a-z]+-[A-Z]"
+    require_nearby: "\\.SYNOPSIS"
+    example_bad: |
+      function Deploy-Application {
+          param($Environment, $Version)
+          ...
+      }
+    example_good: |
+      function Deploy-Application {
+          <#
+          .SYNOPSIS
+              Deploys the application to a target environment.
+          .PARAMETER Environment
+              Target environment name (dev, staging, prod).
+          .PARAMETER Version
+              Application version to deploy.
+          #>
+          [CmdletBinding()]
+          param(
+              [Parameter(Mandatory=$true)][string]$Environment,
+              [Parameter(Mandatory=$true)][string]$Version
+          )
+      }
+
+  - id: PS-LINT-011
+    name: Line length must not exceed 120 characters
+    severity: warning
+    description: "Lines must not exceed 120 characters. Use splatting or line continuation for long commands."
+    rationale: "Long lines are difficult to read in code reviews, terminals, and side-by-side diffs. PowerShell supports splatting (@params) and backtick line continuation for breaking up long commands."
+    match_type: line_length
+    max_length: 120
+    example_bad: |
+      Invoke-RestMethod -Uri "https://api.example.com/v1/deploy" -Method Post -Headers @{Authorization="Bearer $Token"} -Body (ConvertTo-Json $Payload)
+    example_good: |
+      $params = @{
+          Uri     = 'https://api.example.com/v1/deploy'
+          Method  = 'Post'
+          Headers = @{ Authorization = "Bearer $Token" }
+          Body    = ConvertTo-Json $Payload
+      }
+      Invoke-RestMethod @params

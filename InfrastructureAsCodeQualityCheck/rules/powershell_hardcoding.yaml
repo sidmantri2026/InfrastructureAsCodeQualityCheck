@@ -1,0 +1,171 @@
+category: PowerShell - Hardcoding & Sensitive Data
+technology: powershell
+description: >
+  Rules preventing hardcoded values and sensitive data exposure in PowerShell scripts.
+  Covers IP addresses, connection strings, credentials, account names,
+  and patterns that log or expose sensitive data at runtime.
+rules:
+
+  - id: PS-HARD-001
+    name: No hardcoded IP addresses
+    severity: error
+    description: "IP addresses must not be hardcoded in PowerShell scripts. Use parameters or environment variables."
+    rationale: "Hardcoded IP addresses make scripts environment-specific, break when infrastructure changes, and expose internal network topology in source control."
+    match_type: regex
+    target: any
+    pattern: "=\\s*['\"](?:(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.){3}(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)['\"]"
+    exclude_pattern: "#|127\\.0\\.0\\.1|0\\.0\\.0\\.0|\\$env:|param|\\$[A-Z]"
+    example_bad: |
+      $Server = '192.168.10.45'
+      $DbHost = '10.20.30.40'
+    example_good: |
+      $Server = $env:APP_SERVER
+      $DbHost = $env:DB_HOST
+
+  - id: PS-HARD-002
+    name: No hardcoded connection strings
+    severity: critical
+    description: "Database connection strings must not be hardcoded. Use environment variables or retrieve from a secrets manager."
+    rationale: "Connection strings contain server addresses, database names, and often credentials. Hardcoding them exposes all of this information in source control and makes environment-specific deployment impossible without code changes."
+    match_type: regex
+    target: any
+    pattern: "(ConnectionString|ConnString|connection_string)\\s*=\\s*['\"][^'\"]*(?:Server=|Data Source=|Host=)[^'\"]{10,}['\"]"
+    flags: IGNORECASE
+    exclude_pattern: "#|\\$env:|Get-Secret|param"
+    example_bad: |
+      $ConnectionString = 'Server=db01.prod.internal;Database=AppDB;User Id=appuser;Password=S3cr3t!'
+    example_good: |
+      $ConnectionString = $env:DB_CONNECTION_STRING
+      # Or from secrets manager:
+      $ConnectionString = Get-Secret -Name 'prod-db-connection-string' -AsPlainText
+
+  - id: PS-HARD-003
+    name: No hardcoded server names or FQDNs
+    severity: error
+    description: "Server names, FQDNs, and computer names must not be hardcoded in scripts. Use parameters with validation."
+    rationale: "Server names differ between environments and change when infrastructure is rebuilt. Parameters with ValidatePattern allow the caller to supply the correct value for each environment."
+    match_type: regex
+    target: any
+    pattern: "(-ComputerName|-Server|-SqlServer|-HostName)\\s+['\"][a-zA-Z][a-zA-Z0-9._-]*\\.[a-zA-Z]{2,}['\"]"
+    exclude_pattern: "#|\\$|param"
+    example_bad: |
+      Invoke-Command -ComputerName 'appserver01.prod.internal' -ScriptBlock { ... }
+      $conn = New-Object System.Data.SqlClient.SqlConnection
+      $conn.ConnectionString = "Server=sqlprod01.internal;..."
+    example_good: |
+      Invoke-Command -ComputerName $env:APP_SERVER -ScriptBlock { ... }
+
+  - id: PS-HARD-004
+    name: No hardcoded port numbers
+    severity: warning
+    description: "Port numbers must not be hardcoded inline. Define them as named variables or parameters at the top of the script."
+    rationale: "Port numbers change during security hardening and between environments. Named variables centralise port definitions and make them overridable without editing the script body."
+    match_type: regex
+    target: any
+    pattern: "(-Port|-LocalPort|-RemotePort)\\s+(?!\\$)\\d{2,5}"
+    exclude_pattern: "#|\\$|param"
+    example_bad: |
+      Test-NetConnection -ComputerName $Server -Port 8080
+      $listener = New-Object System.Net.HttpListener
+      $listener.Prefixes.Add('http://+:443/')
+    example_good: |
+      $AppPort = $env:APP_PORT ?? 8080
+      Test-NetConnection -ComputerName $Server -Port $AppPort
+
+  - id: PS-HARD-005
+    name: No hardcoded Windows usernames or domain accounts
+    severity: error
+    description: "Windows usernames, domain accounts, and service account names must not be hardcoded. Use parameters or environment variables."
+    rationale: "Account names differ between environments and organisations. Hardcoding domain accounts creates undocumented dependencies on specific account names existing in Active Directory."
+    match_type: regex
+    target: any
+    pattern: "(Username|RunAs|Identity)\\s*=\\s*['\"][A-Za-z][A-Za-z0-9._\\\\-]{3,}['\"]"
+    flags: IGNORECASE
+    exclude_pattern: "#|\\$|param|NT AUTHORITY|SYSTEM|Everyone|Administrators"
+    example_bad: |
+      $Credential = New-Object PSCredential('DOMAIN\svc_deploy', $SecurePass)
+      Set-ScheduledTask -Principal (New-ScheduledTaskPrincipal -UserId 'DOMAIN\svc_deploy')
+    example_good: |
+      $ServiceAccount = $env:DEPLOY_SERVICE_ACCOUNT
+      $Credential = New-Object PSCredential($ServiceAccount, $SecurePass)
+
+  - id: PS-HARD-006
+    name: No hardcoded file paths
+    severity: warning
+    description: "Base deployment paths, application directories, and log paths must use variables, not hardcoded strings."
+    rationale: "Paths differ between servers and environments. Hardcoded paths prevent script reuse, cause failures on servers with different drive mappings, and require code changes for each environment."
+    match_type: regex
+    target: any
+    pattern: "(Copy-Item|Move-Item|Remove-Item|Set-Content|Get-Content|Start-Process)\\s+['\"][C-Z]:\\\\[A-Za-z][A-Za-z0-9_\\\\-]{6,}['\"]"
+    exclude_pattern: "#|\\$|param|\\$env:"
+    example_bad: |
+      Copy-Item -Path '.\app.exe' -Destination 'C:\Program Files\MyCompany\MyApp\bin\'
+      Get-Content 'C:\MyCompany\Config\settings.json'
+    example_good: |
+      $AppInstallPath = $env:APP_INSTALL_PATH ?? 'C:\Program Files\MyApp'
+      Copy-Item -Path '.\app.exe' -Destination "$AppInstallPath\bin\"
+
+  - id: PS-HARD-007
+    name: No hardcoded credentials or secrets
+    severity: critical
+    description: "Passwords, API keys, tokens, and secrets must never appear as hardcoded string values in variable assignments."
+    rationale: "Hardcoded secrets in scripts are committed to version control, visible in process memory, appear in CI/CD logs, and are accessible to anyone who can read the script. Always retrieve from a secrets manager."
+    match_type: regex
+    target: any
+    pattern: "\\$(Password|Token|Secret|ApiKey|AccessKey|Credential|AuthKey)\\s*=\\s*['\"][A-Za-z0-9+/!@#$%^&*]{8,}['\"]"
+    flags: IGNORECASE
+    exclude_pattern: "#|ConvertTo-SecureString|Get-Secret|\\$env:|param|SecureString"
+    example_bad: |
+      $Password = 'MyS3cr3tPass!'
+      $ApiToken = 'ghp_abc123xyz789token'
+    example_good: |
+      $Password = Get-Secret -Name 'AppPassword' -AsPlainText
+      $ApiToken  = $env:GITHUB_API_TOKEN
+
+  - id: PS-HARD-008
+    name: Do not log sensitive variable values
+    severity: error
+    description: "Write-Host, Write-Verbose, Write-Output, and Out-File must not print or write values of sensitive variables."
+    rationale: "Output written by PowerShell scripts appears in Jenkins/AAP logs, Windows Event Log, and application logs. Credential values written there persist long-term and are accessible to log administrators."
+    match_type: regex
+    target: any
+    pattern: "(Write-Host|Write-Verbose|Write-Output|Write-Debug).*\\$(Password|Token|Secret|ApiKey|Credential)"
+    flags: IGNORECASE
+    exclude_pattern: "#"
+    example_bad: |
+      Write-Verbose "Connecting with password: $Password"
+      Write-Host "API Token is: $ApiToken"
+    example_good: |
+      Write-Verbose "Connecting to $Server as $Username"
+      # Never log the actual credential value
+
+  - id: PS-HARD-009
+    name: No hardcoded Azure/AWS resource IDs
+    severity: critical
+    description: "Azure subscription IDs, tenant IDs, AWS account IDs, and cloud resource identifiers must not be hardcoded."
+    rationale: "Cloud resource IDs are environment-specific (dev/staging/prod use different subscriptions) and sensitive. They expose your cloud account structure and must be supplied as parameters."
+    match_type: regex
+    target: any
+    pattern: "(SubscriptionId|TenantId|AccountId|ResourceGroup)\\s*=\\s*['\"][0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}['\"]|['\"][0-9]{12}['\"]"
+    flags: IGNORECASE
+    exclude_pattern: "#|\\$|param|\\$env:"
+    example_bad: |
+      $SubscriptionId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
+      $TenantId       = 'b2c3d4e5-f6a7-8901-bcde-f12345678901'
+    example_good: |
+      $SubscriptionId = $env:AZURE_SUBSCRIPTION_ID
+      $TenantId       = $env:AZURE_TENANT_ID
+
+  - id: PS-HARD-010
+    name: No hardcoded email addresses or distribution lists
+    severity: warning
+    description: "Email addresses and distribution lists used in Send-MailMessage or notification cmdlets must use variables, not hardcoded strings."
+    rationale: "Email addresses change and differ between environments (use a dev alias in dev, oncall in prod). Hardcoded addresses send production alerts to the wrong team or expose internal contact information."
+    match_type: regex
+    target: any
+    pattern: "(Send-MailMessage|mail\\s+to:|slackSend).*['\"][a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}['\"]"
+    exclude_pattern: "#|\\$|param|\\$env:"
+    example_bad: |
+      Send-MailMessage -To 'team@example.com' -Subject "Build Failed"
+    example_good: |
+      Send-MailMessage -To $env:NOTIFICATION_EMAIL -Subject "Build Failed"

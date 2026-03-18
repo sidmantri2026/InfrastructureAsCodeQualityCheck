@@ -1,0 +1,163 @@
+category: Ansible - Hardcoding & Sensitive Data
+technology: ansible
+description: >
+  Rules preventing hardcoded values and sensitive data exposure in Ansible.
+  Covers IP addresses, hostnames, ports, usernames, paths, URLs,
+  and any value that varies between environments or contains sensitive data.
+rules:
+
+  - id: ANS-HARD-001
+    name: No hardcoded IP addresses
+    severity: error
+    description: "IP addresses must not be hardcoded in playbooks or role files. Use inventory variables, group_vars, or dynamic inventory."
+    rationale: "Hardcoded IP addresses break playbooks when infrastructure changes, make them non-reusable across environments, and expose internal network topology in source control."
+    match_type: regex
+    target: any
+    pattern: ":\\s*['\"]?(?:(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.){3}(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)['\"]?"
+    exclude_pattern: "#|0\\.0\\.0\\.0|127\\.0\\.0\\.1|255\\.255\\.255\\.255|\\{\\{|when:|vars:|regex|cidr|subnet|network_address"
+    example_bad: |
+      - name: Connect to database
+        community.mysql.mysql_db:
+          login_host: 192.168.10.45
+    example_good: |
+      - name: Connect to database
+        community.mysql.mysql_db:
+          login_host: "{{ db_host }}"
+
+  - id: ANS-HARD-002
+    name: No hardcoded usernames or account names
+    severity: error
+    description: "Usernames, service account names, and login names must not be hardcoded. Use variables from group_vars or vault."
+    rationale: "Hardcoded usernames cannot be changed without editing playbooks. Service accounts differ between environments and organisations. Variables allow reuse without code modification."
+    match_type: regex
+    target: any
+    pattern: "(login_user|remote_user|become_user|ansible_user|login_host|db_user)\\s*:\\s*['\"]?[a-zA-Z][a-zA-Z0-9_-]{2,}['\"]?"
+    exclude_pattern: "#|\\{\\{|root$|ansible$"
+    example_bad: |
+      - name: Connect to database
+        community.mysql.mysql_user:
+          login_user: dbadmin
+          login_password: "{{ vault_db_pass }}"
+    example_good: |
+      - name: Connect to database
+        community.mysql.mysql_user:
+          login_user: "{{ db_admin_user }}"
+          login_password: "{{ vault_db_pass }}"
+
+  - id: ANS-HARD-003
+    name: No hardcoded port numbers in tasks
+    severity: warning
+    description: "Port numbers used in tasks must reference variables, not be hardcoded integers."
+    rationale: "Ports change between environments and during security hardening. Hardcoded ports make playbooks environment-specific and require code changes instead of variable overrides."
+    match_type: regex
+    target: any
+    pattern: "(port|listen_port|http_port|https_port)\\s*:\\s*(?!\\{\\{)\\d{2,5}"
+    exclude_pattern: "#"
+    example_bad: |
+      - name: Configure nginx
+        ansible.builtin.template:
+          src: nginx.conf.j2
+        vars:
+          http_port: 8080
+    example_good: |
+      # In group_vars/all.yml:
+      # app_http_port: 8080
+      - name: Configure nginx
+        ansible.builtin.template:
+          src: nginx.conf.j2
+
+  - id: ANS-HARD-004
+    name: No hardcoded file system paths
+    severity: warning
+    description: "Absolute file system paths must not be hardcoded in tasks. Use variables for base paths that differ between environments."
+    rationale: "Deployment paths, log directories, and config file locations differ between environments and Linux distributions. Hardcoded paths make roles non-portable and require forking for each environment."
+    match_type: regex
+    target: any
+    pattern: "(dest|path|chdir|src)\\s*:\\s*['\"]?/(?:opt|home|var|srv|data)/[a-zA-Z][a-zA-Z0-9/_-]{5,}['\"]?"
+    exclude_pattern: "#|\\{\\{|/var/log$|/var/run$|/tmp$|/etc/"
+    example_bad: |
+      - name: Copy application binary
+        ansible.builtin.copy:
+          src: myapp
+          dest: /opt/myapp/bin/myapp
+    example_good: |
+      - name: Copy application binary
+        ansible.builtin.copy:
+          src: myapp
+          dest: "{{ app_install_dir }}/bin/myapp"
+
+  - id: ANS-HARD-005
+    name: No hardcoded URLs or hostnames in tasks
+    severity: error
+    description: "URLs and hostnames used in tasks (uri module, get_url, yum repo URLs) must be variables, not hardcoded strings."
+    rationale: "Hardcoded URLs reference specific environments and cannot be overridden without editing playbooks. URLs also change (servers move, CDNs change) and must be centrally managed."
+    match_type: regex
+    target: any
+    pattern: "(url|repo_url|base_url|download_url)\\s*:\\s*https?://(?!\\{\\{)[a-zA-Z0-9._-]"
+    exclude_pattern: "#|\\{\\{"
+    example_bad: |
+      - name: Download agent
+        ansible.builtin.get_url:
+          url: https://releases.example.com/agent-1.0.tar.gz
+          dest: /tmp/agent.tar.gz
+    example_good: |
+      - name: Download agent
+        ansible.builtin.get_url:
+          url: "{{ agent_download_url }}"
+          dest: /tmp/agent.tar.gz
+
+  - id: ANS-HARD-006
+    name: Sensitive module parameters must use vault variables
+    severity: critical
+    description: "Module parameters that accept sensitive data (passwords, tokens, keys) must reference vault-encrypted variables, identifiable by 'vault_' prefix convention."
+    rationale: "Sensitive parameters passed as plain strings are visible in the playbook, in Ansible logs, and in AAP job output. All secrets must come from encrypted vault variables."
+    match_type: regex
+    target: any
+    pattern: "(login_password|password|api_password|auth_key|auth_token|private_key_content)\\s*:\\s*(?!\\{\\{\\s*vault_)['\"]?[A-Za-z0-9+/!@#$%^&*]{6,}"
+    exclude_pattern: "#|\\{\\{|lookup|env"
+    example_bad: |
+      - name: Set DB password
+        community.mysql.mysql_user:
+          login_password: "secretpassword123"
+    example_good: |
+      - name: Set DB password
+        community.mysql.mysql_user:
+          login_password: "{{ vault_db_root_password }}"
+
+  - id: ANS-HARD-007
+    name: No hardcoded AWS/Azure/GCP account IDs or subscription IDs
+    severity: critical
+    description: "Cloud account IDs, subscription IDs, and tenant IDs must not be hardcoded. They must come from variables."
+    rationale: "Account IDs and subscription IDs are sensitive identifiers that expose your cloud account structure. They differ between environments (dev/prod accounts) and must not be stored in plain text in playbooks."
+    match_type: regex
+    target: any
+    pattern: "(account_id|subscription_id|tenant_id|project_id)\\s*:\\s*['\"]?[0-9a-f-]{8,}['\"]?"
+    exclude_pattern: "#|\\{\\{"
+    example_bad: |
+      - name: Create S3 bucket
+        amazon.aws.s3_bucket:
+          name: my-bucket
+          account_id: "123456789012"
+    example_good: |
+      - name: Create S3 bucket
+        amazon.aws.s3_bucket:
+          name: my-bucket
+          account_id: "{{ aws_account_id }}"
+
+  - id: ANS-HARD-008
+    name: Do not print sensitive variables with debug module
+    severity: error
+    description: "The debug module must not print variables that contain passwords, tokens, keys, or other sensitive data."
+    rationale: "ansible.builtin.debug prints variable values to stdout and logs. If a sensitive variable is printed, its value is exposed in all places where logs are stored, including AAP, CI/CD systems, and log aggregators."
+    match_type: regex
+    target: any
+    pattern: "ansible\\.builtin\\.debug:|debug:"
+    require_nearby_violates: "(password|token|secret|key|vault_).*msg:|msg:.*\\{\\{.*(password|token|secret|key|vault_)"
+    example_bad: |
+      - name: Debug credentials
+        ansible.builtin.debug:
+          msg: "DB password is {{ vault_db_password }}"
+    example_good: |
+      - name: Debug connection info
+        ansible.builtin.debug:
+          msg: "Connecting to {{ db_host }} as {{ db_user }}"

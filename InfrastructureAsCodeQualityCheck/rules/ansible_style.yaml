@@ -1,0 +1,103 @@
+category: Style & Formatting
+technology: ansible
+description: Rules ensuring consistent formatting, readability, and documentation standards.
+rules:
+
+  - id: ANS-STY-001
+    name: Use YAML true/false not yes/no
+    severity: warning
+    description: Use boolean literals 'true' and 'false' instead of 'yes' and 'no' in YAML files.
+    rationale: While YAML 1.1 accepts yes/no, YAML 1.2 (used by modern tools) only recognizes true/false. Using yes/no creates portability issues.
+    match_type: regex
+    target: any
+    pattern: ":\\s+(yes|no)\\s*$"
+    flags: IGNORECASE
+    example_bad: |
+      become: yes
+      no_log: no
+    example_good: |
+      become: true
+      no_log: false
+
+  - id: ANS-STY-002
+    name: Variables must use double braces with spaces
+    severity: warning
+    description: Jinja2 variables must be written with spaces inside braces — '{{ var }}' not '{{var}}'.
+    rationale: Consistent spacing inside Jinja2 delimiters improves readability. This matches the style enforced by ansible-lint and yaml-lint.
+    match_type: regex
+    target: any
+    pattern: "\\{\\{[^\\s]|[^\\s]\\}\\}"
+    example_bad: |
+      dest: /etc/{{app_name}}/config
+    example_good: |
+      dest: /etc/{{ app_name }}/config
+
+  - id: ANS-STY-003
+    name: Files must end with a newline
+    severity: info
+    description: All YAML files must end with a single newline character.
+    rationale: Missing trailing newlines cause issues with file concatenation, diffs, and some YAML parsers.
+    match_type: file_ending
+    require_newline: true
+
+  - id: ANS-STY-004
+    name: Line length must not exceed 160 characters
+    severity: warning
+    description: Lines should not exceed 160 characters. Use YAML block scalars or multiline syntax for long strings.
+    rationale: Long lines are difficult to read in code reviews and terminal output. They also cause horizontal scrolling in editors without wrapping.
+    match_type: line_length
+    max_length: 160
+    example_bad: |
+      - name: Deploy application with a very long shell command that does many things
+        ansible.builtin.shell: "cd /opt/myapp && ./deploy.sh --env={{ environment }} --version={{ app_version }} --config={{ config_path }} --log-level=debug"
+    example_good: |
+      - name: Deploy application
+        ansible.builtin.shell: >-
+          cd /opt/myapp &&
+          ./deploy.sh
+          --env={{ environment }}
+          --version={{ app_version }}
+
+  - id: ANS-STY-005
+    name: Playbooks must start with YAML document marker
+    severity: info
+    description: All playbook files should start with '---' (YAML document start marker).
+    rationale: The document start marker clearly identifies the file as YAML and is required by strict YAML parsers. It also signals to editors to enable YAML syntax highlighting.
+    match_type: file_start
+    required_start: "---"
+    example_bad: |
+      - name: Configure webservers
+        hosts: webservers
+    example_good: |
+      ---
+      - name: Configure webservers
+        hosts: webservers
+
+  - id: ANS-STY-006
+    name: Comments should explain 'why', not 'what'
+    severity: info
+    description: Comments in playbooks should explain the reasoning behind a decision, not just restate what the code does.
+    rationale: Self-documenting code describes what it does. Comments add value by explaining WHY a particular approach was chosen, especially for non-obvious decisions.
+    match_type: regex
+    target: comment
+    pattern: "^\\s*#\\s*(install|copy|set|get|run|start|stop|restart|create|delete|remove|update|configure)\\s+\\w+"
+    flags: IGNORECASE
+    example_bad: |
+      # Install nginx
+      - name: Install nginx web server
+    example_good: |
+      # nginx required instead of apache due to websocket support (see RFC-1234)
+      - name: Install nginx web server
+
+  - id: ANS-STY-007
+    name: Use quotes consistently for strings
+    severity: info
+    description: String values containing special characters, Jinja2 expressions, or colons must be quoted. Use double quotes for Jinja2 expressions.
+    rationale: Unquoted strings with special YAML characters can cause parse errors that are difficult to debug. Consistent quoting improves clarity.
+    match_type: regex
+    target: any
+    pattern: ":\\s+[^'\"].*\\{\\{.*\\}\\}"
+    example_bad: |
+      dest: /etc/{{ app_name }}/app.conf
+    example_good: |
+      dest: "/etc/{{ app_name }}/app.conf"

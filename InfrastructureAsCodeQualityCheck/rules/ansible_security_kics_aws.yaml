@@ -1,0 +1,342 @@
+category: Cloud Security - AWS
+technology: ansible
+source: KICS by Checkmarx (https://github.com/Checkmarx/kics)
+description: >
+  Security rules derived from KICS (Keeping Infrastructure as Code Secure) by Checkmarx.
+  These rules detect AWS cloud misconfigurations, insecure defaults, and compliance violations
+  commonly found in Ansible playbooks that manage AWS infrastructure.
+  Rule IDs prefixed with KICS- map directly to KICS query IDs for cross-reference.
+rules:
+
+  - id: ANS-KICS-AWS-001
+    name: S3 Bucket With Public Access
+    severity: critical
+    category: Cloud Security - AWS
+    description: "S3 buckets must not allow public access. The permission parameter must not be set to public-read, public-read-write, or authenticated-read."
+    rationale: "Publicly accessible S3 buckets are one of the most common causes of data breaches. Any data stored in a public bucket is accessible to anyone on the internet."
+    kics_id: c3e073c1-f65e-4d18-bd67-4a8f20ad1ab9
+    match_type: regex
+    target: any
+    pattern: "permission:\\s*(public-read|public-read-write|authenticated-read)"
+    flags: IGNORECASE
+    example_bad: |
+      - name: Create S3 bucket
+        amazon.aws.s3_bucket:
+          name: my-bucket
+          permission: public-read
+    example_good: |
+      - name: Create S3 bucket
+        amazon.aws.s3_bucket:
+          name: my-bucket
+          permission: private
+
+  - id: ANS-KICS-AWS-002
+    name: Security Group With Unrestricted Access To SSH
+    severity: critical
+    category: Cloud Security - AWS
+    description: "EC2 security groups must not allow unrestricted inbound access on port 22 (SSH) from 0.0.0.0/0 or ::/0."
+    rationale: "Open SSH access exposes instances to brute-force attacks and credential stuffing from the entire internet. SSH should be restricted to known management IP ranges."
+    kics_id: 57ced4b9-6ba4-487b-8843-b65562b90c77
+    match_type: regex
+    target: any
+    pattern: "(0\\.0\\.0\\.0/0|::/0)"
+    flags: IGNORECASE
+    example_bad: |
+      - name: Create security group
+        amazon.aws.ec2_group:
+          rules:
+            - proto: tcp
+              ports: 22
+              cidr_ip: 0.0.0.0/0
+    example_good: |
+      - name: Create security group
+        amazon.aws.ec2_group:
+          rules:
+            - proto: tcp
+              ports: 22
+              cidr_ip: 10.0.0.0/8
+
+  - id: ANS-KICS-AWS-003
+    name: RDS DB Instance Publicly Accessible
+    severity: critical
+    category: Cloud Security - AWS
+    description: "RDS instances must not be publicly accessible. The publicly_accessible parameter must be false or absent."
+    rationale: "A publicly accessible RDS instance is reachable from the internet, dramatically increasing the attack surface for database credential attacks and SQL injection."
+    kics_id: c09e3ca5-f08a-4717-9c87-3919c5e6d209
+    match_type: regex
+    target: any
+    pattern: "publicly_accessible:\\s*(true|yes)"
+    flags: IGNORECASE
+    example_bad: |
+      - name: Create RDS instance
+        community.aws.rds_instance:
+          db_instance_identifier: mydb
+          publicly_accessible: true
+    example_good: |
+      - name: Create RDS instance
+        community.aws.rds_instance:
+          db_instance_identifier: mydb
+          publicly_accessible: false
+
+  - id: ANS-KICS-AWS-004
+    name: Hardcoded AWS Access Key
+    severity: critical
+    category: Cloud Security - AWS
+    description: "AWS access keys must never be hardcoded in playbooks. Use IAM roles, environment variables, or AWS Secrets Manager."
+    rationale: "Hardcoded AWS access keys committed to source control are a primary attack vector. Keys are frequently scraped from public or private repositories by automated scanners."
+    kics_id: c2f15af3-66a0-4176-a56e-e4711e502e5c
+    match_type: regex
+    target: any
+    pattern: "(aws_access_key|aws_secret_key|AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY)\\s*:\\s*['\"]?[A-Za-z0-9+/]{16,}['\"]?"
+    flags: IGNORECASE
+    exclude_pattern: "\\{\\{|vault|lookup|env|changeme|example|PLACEHOLDER"
+    example_bad: |
+      - name: Create EC2 instance
+        amazon.aws.ec2_instance:
+          aws_access_key: AKIAIOSFODNN7EXAMPLE
+          aws_secret_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+    example_good: |
+      - name: Create EC2 instance
+        amazon.aws.ec2_instance:
+          aws_access_key: "{{ vault_aws_access_key }}"
+          aws_secret_key: "{{ vault_aws_secret_key }}"
+
+  - id: ANS-KICS-AWS-005
+    name: DB Instance Storage Not Encrypted
+    severity: error
+    category: Cloud Security - AWS
+    description: "RDS DB instances must have storage encryption enabled. Set storage_encrypted to true."
+    rationale: "Unencrypted database storage is readable if the underlying disk or snapshot is accessed. Encryption at rest is a baseline compliance requirement for most standards (PCI-DSS, HIPAA, SOC2)."
+    kics_id: 7dfb316c-a6c2-454d-b8a2-97f147b0c0ff
+    match_type: regex
+    target: any
+    pattern: "storage_encrypted:\\s*(false|no)"
+    flags: IGNORECASE
+    example_bad: |
+      - name: Create RDS instance
+        community.aws.rds_instance:
+          storage_encrypted: false
+    example_good: |
+      - name: Create RDS instance
+        community.aws.rds_instance:
+          storage_encrypted: true
+
+  - id: ANS-KICS-AWS-006
+    name: EBS Volume Encryption Disabled
+    severity: error
+    category: Cloud Security - AWS
+    description: "EBS volumes must be encrypted. Set the encrypted parameter to true when creating volumes."
+    rationale: "Unencrypted EBS volumes expose data if the volume is detached and attached to another instance, or if an EBS snapshot is shared. Encryption prevents this class of attack."
+    kics_id: 4b6012e7-7176-46e4-8108-e441785eae57
+    match_type: regex
+    target: any
+    pattern: "encrypted:\\s*(false|no)"
+    flags: IGNORECASE
+    example_bad: |
+      - name: Create EBS volume
+        amazon.aws.ec2_vol:
+          volume_size: 100
+          encrypted: false
+    example_good: |
+      - name: Create EBS volume
+        amazon.aws.ec2_vol:
+          volume_size: 100
+          encrypted: true
+
+  - id: ANS-KICS-AWS-007
+    name: IAM Policy Grants Full Permissions
+    severity: error
+    category: Cloud Security - AWS
+    description: "IAM policies must not grant wildcard (*) permissions on all actions and resources. Always specify the minimum required permissions."
+    rationale: "Over-permissive IAM policies violate least-privilege principles. A compromised identity with full permissions can access and destroy all resources in the account."
+    kics_id: b5ed026d-a772-4f07-97f9-664ba0b116f8
+    match_type: regex
+    target: any
+    pattern: "\"Action\":\\s*\"\\*\"|Action:\\s*'?\\*'?"
+    flags: IGNORECASE
+    example_bad: |
+      - name: Create IAM policy
+        community.aws.iam_managed_policy:
+          policy_document:
+            Statement:
+              - Effect: Allow
+                Action: "*"
+                Resource: "*"
+    example_good: |
+      - name: Create IAM policy
+        community.aws.iam_managed_policy:
+          policy_document:
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: "arn:aws:s3:::my-bucket/*"
+
+  - id: ANS-KICS-AWS-008
+    name: CloudTrail Logging Disabled
+    severity: error
+    category: Cloud Security - AWS
+    description: "CloudTrail must have logging enabled. The enable_logging parameter must not be set to false."
+    rationale: "CloudTrail provides an audit trail of all API calls in an AWS account. Disabling it removes visibility into who is doing what in your environment, making incident response impossible."
+    kics_id: d4a73c49-cbaa-4c6f-80ee-d6ef5a3a26f5
+    match_type: regex
+    target: any
+    pattern: "(cloudtrail|aws_cloudtrail).*\\n(.*\\n){0,5}.*enable_logging:\\s*(false|no)"
+    flags: IGNORECASE
+    example_bad: |
+      - name: Configure CloudTrail
+        community.aws.cloudtrail:
+          name: management-trail
+          enable_logging: false
+    example_good: |
+      - name: Configure CloudTrail
+        community.aws.cloudtrail:
+          name: management-trail
+          enable_logging: true
+
+  - id: ANS-KICS-AWS-009
+    name: S3 Bucket Without Server-Side Encryption
+    severity: error
+    category: Cloud Security - AWS
+    description: "S3 buckets must have server-side encryption configured. Set encryption rules with AES256 or aws:kms."
+    rationale: "Without server-side encryption, data stored in S3 is written to disk unencrypted. If AWS infrastructure is compromised, this data can be accessed in plaintext."
+    kics_id: 594f54e7-f744-45ab-93e4-c6dbaf6cd571
+    match_type: regex
+    target: any
+    pattern: "s3_bucket:|aws\\.s3_bucket:"
+    require_nearby: "encryption"
+    example_bad: |
+      - name: Create S3 bucket
+        amazon.aws.s3_bucket:
+          name: my-data-bucket
+          state: present
+    example_good: |
+      - name: Create S3 bucket
+        amazon.aws.s3_bucket:
+          name: my-data-bucket
+          state: present
+          encryption: AES256
+
+  - id: ANS-KICS-AWS-010
+    name: Remote Desktop Port Open To Internet
+    severity: error
+    category: Cloud Security - AWS
+    description: "Security groups must not allow unrestricted inbound access on port 3389 (RDP) from 0.0.0.0/0."
+    rationale: "Open RDP access is a primary vector for ransomware and remote code execution attacks. RDP should only be accessible via VPN or bastion hosts."
+    kics_id: eda7301d-1f3e-47cf-8d4e-976debc64341
+    match_type: regex
+    target: any
+    pattern: "port[s]?:\\s*3389"
+    example_bad: |
+      - name: Allow RDP
+        amazon.aws.ec2_group:
+          rules:
+            - proto: tcp
+              ports: 3389
+              cidr_ip: 0.0.0.0/0
+    example_good: |
+      - name: Allow RDP from VPN only
+        amazon.aws.ec2_group:
+          rules:
+            - proto: tcp
+              ports: 3389
+              cidr_ip: 10.0.0.0/8
+
+  - id: ANS-KICS-AWS-011
+    name: RDS With Backup Disabled
+    severity: warning
+    category: Cloud Security - AWS
+    description: "RDS instances must have automated backups enabled. Set backup_retention_period to 7 or more days."
+    rationale: "Without automated backups, data loss from corruption, accidental deletion, or ransomware cannot be recovered. A backup retention period of at least 7 days is recommended."
+    kics_id: e69890e6-fce5-461d-98ad-cb98318dfc96
+    match_type: regex
+    target: any
+    pattern: "backup_retention_period:\\s*0"
+    example_bad: |
+      - name: Create RDS instance
+        community.aws.rds_instance:
+          backup_retention_period: 0
+    example_good: |
+      - name: Create RDS instance
+        community.aws.rds_instance:
+          backup_retention_period: 7
+
+  - id: ANS-KICS-AWS-012
+    name: Authentication Without MFA
+    severity: warning
+    category: Cloud Security - AWS
+    description: "IAM users should have MFA devices assigned and enforced. Avoid creating users without associating MFA."
+    rationale: "Without MFA, a compromised password grants full access to the account. MFA significantly reduces the risk of account takeover from credential phishing or leaks."
+    kics_id: eee107f9-b3d8-45d3-b9c6-43b5a7263ce1
+    match_type: regex
+    target: any
+    pattern: "iam_user:|community\\.aws\\.iam_user:"
+    example_good: |
+      # After creating IAM users, always assign an MFA device via iam_mfa_device
+
+  - id: ANS-KICS-AWS-013
+    name: EC2 Instance Has Public IP
+    severity: warning
+    category: Cloud Security - AWS
+    description: "EC2 instances should not have public IP addresses assigned unless absolutely necessary. Use private subnets and a load balancer."
+    rationale: "Directly internet-facing EC2 instances have a larger attack surface. Use private subnets with NAT gateways for outbound access, and load balancers for inbound."
+    kics_id: a8b0c58b-cd25-4b53-9ad0-55bca0be0bc1
+    match_type: regex
+    target: any
+    pattern: "assign_public_ip:\\s*(true|yes)"
+    flags: IGNORECASE
+    example_bad: |
+      - name: Launch EC2 instance
+        amazon.aws.ec2_instance:
+          network:
+            assign_public_ip: true
+    example_good: |
+      - name: Launch EC2 instance
+        amazon.aws.ec2_instance:
+          network:
+            assign_public_ip: false
+
+  - id: ANS-KICS-AWS-014
+    name: S3 Bucket Without Versioning
+    severity: warning
+    category: Cloud Security - AWS
+    description: "S3 buckets storing important data should have versioning enabled to protect against accidental deletion or overwrite."
+    rationale: "Without versioning, accidentally deleted or overwritten objects cannot be recovered. Versioning also enables MFA-Delete, which prevents unauthorized bucket emptying."
+    kics_id: 9232306a-f839-40aa-b3ef-b352001da9a5
+    match_type: regex
+    target: any
+    pattern: "versioning:\\s*(false|no|Suspended)"
+    flags: IGNORECASE
+    example_bad: |
+      - name: Create S3 bucket
+        amazon.aws.s3_bucket:
+          name: my-bucket
+          versioning: false
+    example_good: |
+      - name: Create S3 bucket
+        amazon.aws.s3_bucket:
+          name: my-bucket
+          versioning: true
+
+  - id: ANS-KICS-AWS-015
+    name: Instance Uses Metadata Service IMDSv1
+    severity: warning
+    category: Cloud Security - AWS
+    description: "EC2 instances must use IMDSv2 (token-based metadata service). Set http_tokens to required."
+    rationale: "IMDSv1 is vulnerable to SSRF attacks where an attacker can trick an application into making requests to the metadata service and retrieving instance credentials."
+    kics_id: b9ef8c0e-1392-4df4-aa84-2e0f95681c75
+    match_type: regex
+    target: any
+    pattern: "http_tokens:\\s*(optional)"
+    flags: IGNORECASE
+    example_bad: |
+      - name: Launch EC2 instance
+        amazon.aws.ec2_instance:
+          metadata_options:
+            http_tokens: optional
+    example_good: |
+      - name: Launch EC2 instance
+        amazon.aws.ec2_instance:
+          metadata_options:
+            http_tokens: required

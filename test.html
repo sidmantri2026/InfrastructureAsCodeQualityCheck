@@ -1,0 +1,2478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>IaC Quality Review Report</title>
+
+<style>
+:root{--bg:#0a0c10;--surface:#111318;--surface2:#181c24;--surface3:#1e2330;
+--border:#252b38;--border2:#2e3547;--text:#d4dae8;--muted:#5a6480;--muted2:#8090b0;
+--accent:#3b8beb;--c-crit:#ff4560;--c-err:#ff8c42;--c-warn:#ffd166;--c-info:#06d6a0;
+--c-clean:#22c55e;--mono:'Consolas','Menlo','Monaco','Courier New',monospace;--sans:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Arial,sans-serif;
+--radius:6px;--radius-lg:12px;}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100vh;font-size:13px;line-height:1.6;}
+::-webkit-scrollbar{width:6px;height:6px;}
+::-webkit-scrollbar-track{background:var(--surface);}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
+.topbar{position:sticky;top:0;z-index:100;background:rgba(10,12,16,0.95);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:0 32px;display:flex;align-items:center;justify-content:space-between;height:56px;}
+.topbar-left{display:flex;align-items:center;gap:14px;}
+.logo-badge{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#1e6fd4,#3b8beb);display:flex;align-items:center;justify-content:center;font-size:15px;}
+.logo-title{font-size:14px;font-weight:700;letter-spacing:.5px;}
+.logo-sub{font-size:10px;color:var(--muted);font-family:var(--mono);letter-spacing:1px;text-transform:uppercase;}
+.topbar-meta{font-size:11px;color:var(--muted);font-family:var(--mono);}
+.topbar-meta span{color:var(--muted2);}
+.topbar-right{display:flex;gap:20px;}
+.layout{display:flex;min-height:calc(100vh - 56px);}
+.sidebar{width:260px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;position:sticky;top:56px;height:calc(100vh - 56px);overflow-y:auto;}
+.sidebar-section{padding:16px;border-bottom:1px solid var(--border);}
+.sidebar-label{font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;font-family:var(--mono);}
+.grade-wrap{display:flex;align-items:center;gap:16px;padding:4px 0 8px;}
+.grade-ring{width:64px;height:64px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:800;border:3px solid var(--grade-col);color:var(--grade-col);box-shadow:0 0 20px color-mix(in srgb,var(--grade-col) 30%,transparent);}
+.grade-info{flex:1;}
+.grade-score{font-size:24px;font-weight:700;line-height:1;}
+.grade-label{font-size:10px;color:var(--muted);margin-top:2px;font-family:var(--mono);}
+.grade-bar-track{height:4px;background:var(--surface3);border-radius:2px;margin-top:8px;overflow:hidden;}
+.grade-bar-fill{height:100%;border-radius:2px;background:linear-gradient(90deg,var(--c-crit),var(--c-warn),var(--c-clean));transition:width 1s cubic-bezier(.22,.68,0,1.2);}
+.stat-row{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:2px;}
+.stat-pill{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:8px 10px;cursor:pointer;transition:all .15s;}
+.stat-pill:hover,.stat-pill.active{border-color:var(--pill-color);box-shadow:0 0 0 1px var(--pill-color);}
+.stat-pill.active{background:color-mix(in srgb,var(--pill-color) 10%,var(--surface2));}
+.pill-val{font-size:20px;font-weight:700;color:var(--pill-color);line-height:1;font-family:var(--mono);}
+.pill-name{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px;}
+.file-list{flex:1;overflow-y:auto;}
+.file-list-item{display:flex;align-items:center;gap:8px;padding:9px 16px;cursor:pointer;border-left:2px solid transparent;transition:all .12s;font-family:var(--mono);font-size:11px;color:var(--muted2);}
+.file-list-item:hover{background:var(--surface2);color:var(--text);}
+.file-list-item.active{background:var(--surface2);border-left-color:var(--accent);color:var(--text);}
+.file-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;background:var(--dot-col);}
+.file-list-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.file-list-count{font-size:10px;padding:1px 5px;border-radius:3px;background:var(--surface3);color:var(--muted2);flex-shrink:0;}
+.main{flex:1;overflow-y:auto;padding:28px 32px;}
+.view-tabs{display:flex;gap:4px;margin-bottom:24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:3px;width:fit-content;}
+.view-tab{padding:6px 18px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;color:var(--muted);transition:all .15s;}
+.view-tab.active{background:var(--surface3);color:var(--text);}
+.filter-bar{display:flex;align-items:center;gap:8px;margin-bottom:20px;flex-wrap:wrap;}
+.filter-chip{display:flex;align-items:center;gap:5px;padding:4px 12px;border-radius:100px;border:1px solid var(--border2);background:var(--surface);color:var(--muted);cursor:pointer;font-size:11px;font-weight:600;transition:all .15s;letter-spacing:.3px;font-family:var(--mono);}
+.filter-chip:hover{border-color:var(--chip-col);color:var(--text);}
+.filter-chip.active{background:color-mix(in srgb,var(--chip-col) 15%,var(--surface));border-color:var(--chip-col);color:var(--chip-col);}
+.chip-dot{width:6px;height:6px;border-radius:50%;background:var(--chip-col);}
+.filter-search{margin-left:auto;background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius);padding:5px 12px;color:var(--text);font-family:var(--mono);font-size:11px;width:220px;outline:none;}
+.filter-search:focus{border-color:var(--accent);}
+.filter-search::placeholder{color:var(--muted);}
+.issue-table{width:100%;border-collapse:collapse;}
+.issue-table thead th{text-align:left;padding:8px 12px;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);font-family:var(--mono);border-bottom:1px solid var(--border2);cursor:pointer;user-select:none;white-space:nowrap;}
+.issue-table thead th:hover{color:var(--text);}
+.issue-table thead th.sorted .sort-icon{opacity:1;color:var(--accent);}
+.issue-row{border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s;}
+.issue-row:hover{background:var(--surface2);}
+.issue-row.expanded{background:var(--surface2);}
+.issue-row td{padding:10px 12px;vertical-align:top;}
+.sev-tag{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:9px;font-weight:700;padding:2px 7px;border-radius:3px;letter-spacing:.8px;white-space:nowrap;border:1px solid var(--tag-border);color:var(--tag-color);background:var(--tag-bg);}
+.sev-dot{width:5px;height:5px;border-radius:50%;background:var(--tag-color);}
+.rule-id-tag{font-family:var(--mono);font-size:10px;color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent);border:1px solid color-mix(in srgb,var(--accent) 25%,transparent);padding:1px 6px;border-radius:3px;white-space:nowrap;}
+.issue-name{font-size:12px;font-weight:600;color:var(--text);}
+.issue-cat{font-size:10px;color:var(--muted);margin-top:2px;font-family:var(--mono);}
+.file-ref{font-family:var(--mono);font-size:10px;color:var(--muted2);white-space:nowrap;}
+.file-ref .line-badge{display:inline-block;background:var(--surface3);border:1px solid var(--border2);border-radius:3px;padding:0 5px;font-size:10px;margin-left:4px;color:var(--c-warn);}
+.expand-icon{color:var(--muted);font-size:11px;transition:transform .2s;}
+.issue-row.expanded .expand-icon{transform:rotate(180deg);}
+.detail-row{display:none;}
+.detail-row.open{display:table-row;}
+.detail-row td{padding:0;}
+.detail-inner{padding:20px 24px;background:var(--surface);border-bottom:2px solid var(--border2);display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.detail-title{font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);font-family:var(--mono);margin-bottom:8px;display:flex;align-items:center;gap:6px;}
+.detail-title::before{content:'';display:inline-block;width:12px;height:1px;background:var(--border2);}
+.detail-text{font-size:12px;color:var(--muted2);line-height:1.7;}
+.rationale-box{background:color-mix(in srgb,var(--accent) 6%,var(--surface2));border:1px solid color-mix(in srgb,var(--accent) 18%,transparent);border-left:3px solid var(--accent);border-radius:var(--radius);padding:10px 14px;font-size:11px;color:var(--muted2);line-height:1.7;font-style:italic;}
+.code-wrap{grid-column:1/-1;}
+.code-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.code-block{border-radius:var(--radius);overflow:hidden;border:1px solid var(--border2);}
+.code-block.bad{border-color:color-mix(in srgb,var(--c-crit) 30%,var(--border2));}
+.code-block.good{border-color:color-mix(in srgb,var(--c-clean) 30%,var(--border2));}
+.code-header{display:flex;align-items:center;gap:8px;padding:7px 14px;font-size:10px;font-weight:700;font-family:var(--mono);letter-spacing:.5px;border-bottom:1px solid var(--border2);}
+.code-block.bad .code-header{background:color-mix(in srgb,var(--c-crit) 8%,var(--surface2));color:var(--c-crit);}
+.code-block.good .code-header{background:color-mix(in srgb,var(--c-clean) 8%,var(--surface2));color:var(--c-clean);}
+.offending-line{background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius);padding:10px 14px;display:flex;gap:12px;align-items:flex-start;font-family:var(--mono);font-size:11px;overflow-x:auto;margin-bottom:4px;}
+.offending-line .ln{color:var(--muted);user-select:none;flex-shrink:0;padding-top:1px;border-right:1px solid var(--border2);padding-right:10px;min-width:32px;text-align:right;}
+.offending-line code{color:var(--c-warn);flex:1;white-space:pre-wrap;word-break:break-all;}
+.code-body{background:#080a0e;padding:12px 14px;}
+.code-body pre{font-family:var(--mono);font-size:11px;white-space:pre-wrap;overflow-x:auto;line-height:1.7;}
+.code-block.bad .code-body pre{color:#ff8585;}
+.code-block.good .code-body pre{color:#85ffb0;}
+.copy-btn{margin-left:auto;background:none;border:1px solid var(--border2);color:var(--muted);border-radius:3px;padding:2px 8px;font-size:9px;cursor:pointer;font-family:var(--mono);transition:all .15s;}
+.copy-btn:hover{color:var(--text);border-color:var(--muted2);}
+.file-card-v2{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);margin-bottom:12px;overflow:hidden;}
+.file-card-header{display:flex;align-items:center;gap:16px;padding:14px 18px;cursor:pointer;user-select:none;transition:background .12s;}
+.file-card-header:hover{background:var(--surface2);}
+.file-score-ring{width:48px;height:48px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;font-family:var(--mono);border:2px solid var(--ring-col);color:var(--ring-col);box-shadow:0 0 12px color-mix(in srgb,var(--ring-col) 25%,transparent);}
+.file-info{flex:1;min-width:0;}
+.file-name-v2{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.file-path-v2{font-size:10px;color:var(--muted);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;}
+.file-sev-pills{display:flex;gap:5px;margin-top:5px;flex-wrap:wrap;}
+.file-sev-pill{font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;font-family:var(--mono);letter-spacing:.5px;border:1px solid var(--p-border);color:var(--p-color);background:var(--p-bg);}
+.file-body-v2{display:none;border-top:1px solid var(--border);}
+.file-card-v2.open .file-body-v2{display:block;}
+.file-chevron{color:var(--muted);transition:transform .2s;flex-shrink:0;}
+.file-card-v2.open .file-chevron{transform:rotate(180deg);}
+.rules-table{width:100%;border-collapse:collapse;}
+.rules-table th{text-align:left;padding:8px 14px;font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);font-family:var(--mono);border-bottom:1px solid var(--border2);}
+.rules-table td{padding:10px 14px;border-bottom:1px solid var(--border);font-size:12px;vertical-align:top;}
+.rules-table tr:last-child td{border-bottom:none;}
+.rules-table tr:hover td{background:var(--surface2);}
+.empty-state{text-align:center;padding:80px 40px;color:var(--muted);font-family:var(--mono);font-size:12px;}
+.section-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
+.section-title{font-size:14px;font-weight:700;}
+.section-count{font-family:var(--mono);font-size:11px;color:var(--muted);}
+.footer{text-align:center;padding:32px;color:var(--muted);font-size:11px;border-top:1px solid var(--border);font-family:var(--mono);margin-top:40px;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.issue-row,.file-card-v2{animation:fadeIn .2s ease both}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="logo-badge">&#9881;</div>
+    <div>
+      <div class="logo-title">IaC Quality Reviewer</div>
+      <div class="logo-sub">Infrastructure Automation &middot; Quality Gate</div>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <div class="topbar-meta">target <span id="hdr-target"></span></div>
+    <div class="topbar-meta">generated <span id="hdr-ts"></span></div>
+    <div class="topbar-meta">rules <span id="hdr-rules"></span></div>
+  </div>
+</div>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Overall Grade</div>
+      <div class="grade-wrap">
+        <div class="grade-ring" id="grade-ring"></div>
+        <div class="grade-info">
+          <div class="grade-score" id="grade-score"></div>
+          <div class="grade-label">avg quality score</div>
+          <div class="grade-bar-track"><div class="grade-bar-fill" id="grade-bar"></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Summary</div>
+      <div class="stat-row">
+        <div class="stat-pill" style="--pill-color:var(--text)" onclick="setFilter('all')"><div class="pill-val" id="stat-total">0</div><div class="pill-name">All Issues</div></div>
+        <div class="stat-pill" style="--pill-color:var(--c-clean)"><div class="pill-val" id="stat-clean" style="color:var(--c-clean)">0</div><div class="pill-name">Clean Files</div></div>
+        <div class="stat-pill" style="--pill-color:var(--c-crit)" onclick="setFilter('critical')"><div class="pill-val" id="stat-crit" style="color:var(--c-crit)">0</div><div class="pill-name">Critical</div></div>
+        <div class="stat-pill" style="--pill-color:var(--c-err)" onclick="setFilter('error')"><div class="pill-val" id="stat-err" style="color:var(--c-err)">0</div><div class="pill-name">Error</div></div>
+        <div class="stat-pill" style="--pill-color:var(--c-warn)" onclick="setFilter('warning')"><div class="pill-val" id="stat-warn" style="color:var(--c-warn)">0</div><div class="pill-name">Warning</div></div>
+        <div class="stat-pill" style="--pill-color:var(--c-info)" onclick="setFilter('info')"><div class="pill-val" id="stat-info" style="color:var(--c-info)">0</div><div class="pill-name">Info</div></div>
+      </div>
+    </div>
+    <div class="sidebar-section" style="padding-bottom:8px;"><div class="sidebar-label">Files</div></div>
+    <div class="file-list" id="sidebar-files"></div>
+  </aside>
+  <main class="main">
+    <div class="view-tabs">
+      <div class="view-tab active" onclick="switchView('issues')" id="tab-issues">Issues</div>
+      <div class="view-tab" onclick="switchView('files')" id="tab-files">By File</div>
+      <div class="view-tab" onclick="switchView('rules')" id="tab-rules">Rule Reference</div>
+    </div>
+    <div id="view-issues">
+      <div class="filter-bar">
+        <div class="filter-chip active" style="--chip-col:var(--text)" onclick="setFilter('all')" data-sev="all">All</div>
+        <div class="filter-chip" style="--chip-col:var(--c-crit)" onclick="setFilter('critical')" data-sev="critical"><span class="chip-dot"></span>Critical</div>
+        <div class="filter-chip" style="--chip-col:var(--c-err)" onclick="setFilter('error')" data-sev="error"><span class="chip-dot"></span>Error</div>
+        <div class="filter-chip" style="--chip-col:var(--c-warn)" onclick="setFilter('warning')" data-sev="warning"><span class="chip-dot"></span>Warning</div>
+        <div class="filter-chip" style="--chip-col:var(--c-info)" onclick="setFilter('info')" data-sev="info"><span class="chip-dot"></span>Info</div>
+        <input class="filter-search" id="search-box" placeholder="Search rule, file, description&hellip;" oninput="applySearch()">
+      </div>
+      <div class="section-hdr">
+        <div class="section-title">Issues</div>
+        <div class="section-count" id="issue-count-label"></div>
+      </div>
+      <table class="issue-table" id="issue-table">
+        <thead><tr>
+          <th onclick="sortTable('severity')" id="th-severity">Severity <span class="sort-icon">&#8597;</span></th>
+          <th onclick="sortTable('rule_id')" id="th-rule_id">Rule ID <span class="sort-icon">&#8597;</span></th>
+          <th onclick="sortTable('rule_name')" id="th-rule_name">Issue <span class="sort-icon">&#8597;</span></th>
+          <th onclick="sortTable('file')" id="th-file">File &amp; Line <span class="sort-icon">&#8597;</span></th>
+          <th></th>
+        </tr></thead>
+        <tbody id="issue-tbody"></tbody>
+      </table>
+      <div class="empty-state" id="no-issues" style="display:none">
+        <div style="font-size:48px;margin-bottom:16px;opacity:.5">&#10003;</div>No issues match the current filter.
+      </div>
+    </div>
+    <div id="view-files" style="display:none">
+      <div class="section-hdr"><div class="section-title">Files</div><div class="section-count" id="file-count-label"></div></div>
+      <div id="files-container"></div>
+    </div>
+    <div id="view-rules" style="display:none">
+      <div class="section-hdr"><div class="section-title">Rule Reference</div><div class="section-count" id="rules-count-label"></div></div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;">
+        <table class="rules-table"><thead><tr><th>ID</th><th>Severity</th><th>Category</th><th>Rule Name</th></tr></thead>
+        <tbody id="rules-tbody"></tbody></table>
+      </div>
+    </div>
+    <div class="footer">Generated by <strong>IaC Quality Reviewer</strong> &mdash; Infrastructure Automation Team</div>
+  </main>
+</div>
+<script type="application/json" id="report-data">{
+  "target": "sample_playbooks/bad_example.yml",
+  "timestamp": "2026-03-19 04:05:45",
+  "avg_score": 0,
+  "grade": "F",
+  "grade_color": "#ef4444",
+  "total_files": 1,
+  "files_clean": 0,
+  "total_violations": 20,
+  "severity_totals": {
+    "critical": 2,
+    "error": 6,
+    "warning": 10,
+    "info": 2
+  },
+  "files": [
+    {
+      "path": "sample_playbooks/bad_example.yml",
+      "name": "bad_example.yml",
+      "score": 0,
+      "violations": [
+        {
+          "rule_id": "ANS-NAM-005",
+          "rule_name": "Play names must be present and descriptive",
+          "severity": "error",
+          "category": "Naming Conventions",
+          "description": "Every play in a playbook must have a 'name' field describing its purpose.",
+          "rationale": "Play names appear in output and are essential for understanding execution flow in multi-play playbooks.",
+          "line": 1,
+          "line_content": "- hosts: webservers",
+          "example_bad": "- hosts: webservers\n  tasks: []",
+          "example_good": "- name: Configure nginx webservers\n  hosts: webservers\n  tasks: []"
+        },
+        {
+          "rule_id": "ANS-STY-005",
+          "rule_name": "Playbooks must start with YAML document marker",
+          "severity": "info",
+          "category": "Style & Formatting",
+          "description": "All playbook files should start with '---' (YAML document start marker).",
+          "rationale": "The document start marker clearly identifies the file as YAML and is required by strict YAML parsers. It also signals to editors to enable YAML syntax highlighting.",
+          "line": 1,
+          "line_content": "- hosts: webservers",
+          "example_bad": "- name: Configure webservers\n  hosts: webservers",
+          "example_good": "---\n- name: Configure webservers\n  hosts: webservers"
+        },
+        {
+          "rule_id": "ANS-IDE-002",
+          "rule_name": "Avoid using 'ignore_errors' broadly",
+          "severity": "warning",
+          "category": "Idempotency & Structure",
+          "description": "Do not use 'ignore_errors: true' as a catch-all. Use 'failed_when' or 'block/rescue' for proper error handling.",
+          "rationale": "Ignoring errors masks real failures and makes debugging impossible. If a task is expected to sometimes fail, model that expectation with 'failed_when'.",
+          "line": 2,
+          "line_content": "  become: yes",
+          "example_bad": "- name: Stop service\n  ansible.builtin.service:\n    name: myapp\n    state: stopped\n  ignore_errors: true",
+          "example_good": "- name: Stop service if running\n  ansible.builtin.service:\n    name: myapp\n    state: stopped\n  failed_when: false\n  register: stop_result"
+        },
+        {
+          "rule_id": "ANS-SEC-004",
+          "rule_name": "Become should be scoped to tasks, not entire plays",
+          "severity": "warning",
+          "category": "Security",
+          "description": "Avoid setting 'become: true' at the play level unless every task in the play requires it. Scope privilege escalation to individual tasks.",
+          "rationale": "Play-level become grants root access to ALL tasks in the play, violating least-privilege principles. A misconfigured task running as root can cause catastrophic damage.",
+          "line": 2,
+          "line_content": "  become: yes",
+          "example_bad": "- name: Configure webserver\n  hosts: webservers\n  become: true\n  tasks:\n    - name: Read config file\n      ansible.builtin.slurp:\n        src: /etc/app/config.yml",
+          "example_good": "- name: Configure webserver\n  hosts: webservers\n  tasks:\n    - name: Install nginx\n      ansible.builtin.apt:\n        name: nginx\n      become: true"
+        },
+        {
+          "rule_id": "ANS-STY-001",
+          "rule_name": "Use YAML true/false not yes/no",
+          "severity": "warning",
+          "category": "Style & Formatting",
+          "description": "Use boolean literals 'true' and 'false' instead of 'yes' and 'no' in YAML files.",
+          "rationale": "While YAML 1.1 accepts yes/no, YAML 1.2 (used by modern tools) only recognizes true/false. Using yes/no creates portability issues.",
+          "line": 2,
+          "line_content": "  become: yes",
+          "example_bad": "become: yes\nno_log: no",
+          "example_good": "become: true\nno_log: false"
+        },
+        {
+          "rule_id": "ANS-HARD-006",
+          "rule_name": "Sensitive module parameters must use vault variables",
+          "severity": "critical",
+          "category": "Ansible - Hardcoding & Sensitive Data",
+          "description": "Module parameters that accept sensitive data (passwords, tokens, keys) must reference vault-encrypted variables, identifiable by 'vault_' prefix convention.",
+          "rationale": "Sensitive parameters passed as plain strings are visible in the playbook, in Ansible logs, and in AAP job output. All secrets must come from encrypted vault variables.",
+          "line": 4,
+          "line_content": "    db_password: MyS3cr3tPassw0rd!",
+          "example_bad": "- name: Set DB password\n  community.mysql.mysql_user:\n    login_password: \"secretpassword123\"",
+          "example_good": "- name: Set DB password\n  community.mysql.mysql_user:\n    login_password: \"{{ vault_db_root_password }}\""
+        },
+        {
+          "rule_id": "ANS-SEC-001",
+          "rule_name": "No hardcoded passwords or secrets",
+          "severity": "critical",
+          "category": "Security",
+          "description": "Passwords, API keys, tokens, and secrets must never be hardcoded in playbooks, vars files, or role defaults. Use Ansible Vault, environment variables, or an external secrets manager.",
+          "rationale": "Hardcoded secrets will be committed to source control, exposed in logs, and available to anyone with read access to the repository. This is a critical security risk.",
+          "line": 4,
+          "line_content": "    db_password: MyS3cr3tPassw0rd!",
+          "example_bad": "vars:\n  db_password: MyS3cr3tPass!",
+          "example_good": "vars:\n  db_password: \"{{ vault_db_password }}\""
+        },
+        {
+          "rule_id": "ANS-SEC-003",
+          "rule_name": "No_log must be set for sensitive tasks",
+          "severity": "error",
+          "category": "Security",
+          "description": "Tasks that handle passwords, tokens, or other sensitive data must set 'no_log: true' to prevent secrets from appearing in output logs.",
+          "rationale": "Ansible logs task output by default. Without no_log, secrets can be exposed in terminal output, log files, and AAP job logs.",
+          "line": 4,
+          "line_content": "    db_password: MyS3cr3tPassw0rd!",
+          "example_bad": "- name: Set database password\n  community.mysql.mysql_user:\n    password: \"{{ db_password }}\"",
+          "example_good": "- name: Set database password\n  community.mysql.mysql_user:\n    password: \"{{ db_password }}\"\n  no_log: true"
+        },
+        {
+          "rule_id": "ANS-NAM-003",
+          "rule_name": "Variable names must use snake_case",
+          "severity": "error",
+          "category": "Naming Conventions",
+          "description": "All variable names must use lowercase snake_case. No camelCase, PascalCase, or hyphens.",
+          "rationale": "Consistent naming prevents subtle bugs. Ansible variables are case-sensitive and mixing conventions causes unpredictable behavior.",
+          "line": 5,
+          "line_content": "    webServerPort: 8080",
+          "example_bad": "vars:\n  webServerPort: 8080\n  db-password: secret",
+          "example_good": "vars:\n  web_server_port: 8080\n  db_password: secret"
+        },
+        {
+          "rule_id": "ANS-IDE-004",
+          "rule_name": "Tags must be applied to all tasks in shared roles",
+          "severity": "warning",
+          "category": "Idempotency & Structure",
+          "description": "Tasks in shared/reusable roles should have tags to allow selective execution.",
+          "rationale": "Tags allow operators to run specific subsets of tasks during partial deployments or troubleshooting without running the full playbook.",
+          "line": 10,
+          "line_content": "    - name: task",
+          "example_bad": "- name: Install nginx\n  ansible.builtin.apt:\n    name: nginx\n    state: present",
+          "example_good": "- name: Install nginx\n  ansible.builtin.apt:\n    name: nginx\n    state: present\n  tags:\n    - nginx\n    - install"
+        },
+        {
+          "rule_id": "ANS-IDE-001",
+          "rule_name": "Use FQCN (Fully Qualified Collection Names) for all modules",
+          "severity": "error",
+          "category": "Idempotency & Structure",
+          "description": "Always use the fully qualified collection name for modules (e.g., ansible.builtin.copy not just copy). This prevents ambiguity when multiple collections are installed.",
+          "rationale": "Short module names are resolved by collection priority order, which can change. FQCNs are explicit, unambiguous, and future-proof.",
+          "line": 11,
+          "line_content": "      shell: apt-get install -y nginx",
+          "example_bad": "- name: Copy config file\n  copy:\n    src: foo.conf\n    dest: /etc/foo.conf",
+          "example_good": "- name: Copy config file\n  ansible.builtin.copy:\n    src: foo.conf\n    dest: /etc/foo.conf"
+        },
+        {
+          "rule_id": "ANS-SEC-002",
+          "rule_name": "Avoid shell/command modules when alternatives exist",
+          "severity": "warning",
+          "category": "Security",
+          "description": "Prefer purpose-built Ansible modules over 'shell' or 'command'. Use shell/command only when no module exists for the task.",
+          "rationale": "Shell and command modules bypass idempotency, skip change tracking, and are harder to read. They also make it easier to introduce injection vulnerabilities.",
+          "line": 11,
+          "line_content": "      shell: apt-get install -y nginx",
+          "example_bad": "- name: Install nginx\n  shell: apt-get install -y nginx",
+          "example_good": "- name: Install nginx\n  ansible.builtin.apt:\n    name: nginx\n    state: present"
+        },
+        {
+          "rule_id": "ANS-IDE-004",
+          "rule_name": "Tags must be applied to all tasks in shared roles",
+          "severity": "warning",
+          "category": "Idempotency & Structure",
+          "description": "Tasks in shared/reusable roles should have tags to allow selective execution.",
+          "rationale": "Tags allow operators to run specific subsets of tasks during partial deployments or troubleshooting without running the full playbook.",
+          "line": 12,
+          "line_content": "    - name: Start the service",
+          "example_bad": "- name: Install nginx\n  ansible.builtin.apt:\n    name: nginx\n    state: present",
+          "example_good": "- name: Install nginx\n  ansible.builtin.apt:\n    name: nginx\n    state: present\n  tags:\n    - nginx\n    - install"
+        },
+        {
+          "rule_id": "ANS-IDE-001",
+          "rule_name": "Use FQCN (Fully Qualified Collection Names) for all modules",
+          "severity": "error",
+          "category": "Idempotency & Structure",
+          "description": "Always use the fully qualified collection name for modules (e.g., ansible.builtin.copy not just copy). This prevents ambiguity when multiple collections are installed.",
+          "rationale": "Short module names are resolved by collection priority order, which can change. FQCNs are explicit, unambiguous, and future-proof.",
+          "line": 13,
+          "line_content": "      service:",
+          "example_bad": "- name: Copy config file\n  copy:\n    src: foo.conf\n    dest: /etc/foo.conf",
+          "example_good": "- name: Copy config file\n  ansible.builtin.copy:\n    src: foo.conf\n    dest: /etc/foo.conf"
+        },
+        {
+          "rule_id": "ANS-IDE-004",
+          "rule_name": "Tags must be applied to all tasks in shared roles",
+          "severity": "warning",
+          "category": "Idempotency & Structure",
+          "description": "Tasks in shared/reusable roles should have tags to allow selective execution.",
+          "rationale": "Tags allow operators to run specific subsets of tasks during partial deployments or troubleshooting without running the full playbook.",
+          "line": 15,
+          "line_content": "    - name: Set database credentials",
+          "example_bad": "- name: Install nginx\n  ansible.builtin.apt:\n    name: nginx\n    state: present",
+          "example_good": "- name: Install nginx\n  ansible.builtin.apt:\n    name: nginx\n    state: present\n  tags:\n    - nginx\n    - install"
+        },
+        {
+          "rule_id": "ANS-KICS-CFG-005",
+          "rule_name": "No_log Not Set For Sensitive Modules",
+          "severity": "error",
+          "category": "Cloud Security - Azure",
+          "description": "Tasks using modules that handle credentials (uri with body, mysql_user, postgresql_user, user with password) must set no_log: true.",
+          "rationale": "Ansible logs all task parameters by default. Without no_log, passwords and tokens appear in stdout, log files, and AAP job output where they can be captured.",
+          "line": 16,
+          "line_content": "      community.mysql.mysql_user:",
+          "example_bad": "- name: Create database user\n  community.mysql.mysql_user:\n    name: appuser\n    password: \"{{ db_password }}\"",
+          "example_good": "- name: Create database user\n  community.mysql.mysql_user:\n    name: appuser\n    password: \"{{ db_password }}\"\n  no_log: true"
+        },
+        {
+          "rule_id": "ANS-IDE-004",
+          "rule_name": "Tags must be applied to all tasks in shared roles",
+          "severity": "warning",
+          "category": "Idempotency & Structure",
+          "description": "Tasks in shared/reusable roles should have tags to allow selective execution.",
+          "rationale": "Tags allow operators to run specific subsets of tasks during partial deployments or troubleshooting without running the full playbook.",
+          "line": 18,
+          "line_content": "    - name: Read some config",
+          "example_bad": "- name: Install nginx\n  ansible.builtin.apt:\n    name: nginx\n    state: present",
+          "example_good": "- name: Install nginx\n  ansible.builtin.apt:\n    name: nginx\n    state: present\n  tags:\n    - nginx\n    - install"
+        },
+        {
+          "rule_id": "ANS-IDE-002",
+          "rule_name": "Avoid using 'ignore_errors' broadly",
+          "severity": "warning",
+          "category": "Idempotency & Structure",
+          "description": "Do not use 'ignore_errors: true' as a catch-all. Use 'failed_when' or 'block/rescue' for proper error handling.",
+          "rationale": "Ignoring errors masks real failures and makes debugging impossible. If a task is expected to sometimes fail, model that expectation with 'failed_when'.",
+          "line": 21,
+          "line_content": "      ignore_errors: yes",
+          "example_bad": "- name: Stop service\n  ansible.builtin.service:\n    name: myapp\n    state: stopped\n  ignore_errors: true",
+          "example_good": "- name: Stop service if running\n  ansible.builtin.service:\n    name: myapp\n    state: stopped\n  failed_when: false\n  register: stop_result"
+        },
+        {
+          "rule_id": "ANS-IDE-007",
+          "rule_name": "Use 'block' for grouping related tasks and error handling",
+          "severity": "info",
+          "category": "Idempotency & Structure",
+          "description": "Group logically related tasks using 'block' and provide 'rescue' sections for error handling instead of scattered ignore_errors.",
+          "rationale": "Blocks make logical grouping explicit and allow proper try/catch-style error handling with rescue and always sections.",
+          "line": 21,
+          "line_content": "      ignore_errors: yes",
+          "example_bad": "",
+          "example_good": "- block:\n    - name: Attempt risky operation\n      ansible.builtin.command: /usr/bin/risky-op\n  rescue:\n    - name: Handle failure gracefully\n      ansible.builtin.debug:\n        msg: \"Risky op failed, rolling back\""
+        },
+        {
+          "rule_id": "ANS-STY-001",
+          "rule_name": "Use YAML true/false not yes/no",
+          "severity": "warning",
+          "category": "Style & Formatting",
+          "description": "Use boolean literals 'true' and 'false' instead of 'yes' and 'no' in YAML files.",
+          "rationale": "While YAML 1.1 accepts yes/no, YAML 1.2 (used by modern tools) only recognizes true/false. Using yes/no creates portability issues.",
+          "line": 21,
+          "line_content": "      ignore_errors: yes",
+          "example_bad": "become: yes\nno_log: no",
+          "example_good": "become: true\nno_log: false"
+        }
+      ],
+      "by_severity": {
+        "critical": 2,
+        "error": 6,
+        "warning": 10,
+        "info": 2
+      }
+    }
+  ],
+  "rules": [
+    {
+      "id": "ANS-HARD-001",
+      "name": "No hardcoded IP addresses",
+      "severity": "error",
+      "category": "Ansible - Hardcoding & Sensitive Data",
+      "description": "IP addresses must not be hardcoded in playbooks or role files. Use inventory variables, group_vars, or dynamic inventory.",
+      "rationale": "Hardcoded IP addresses break playbooks when infrastructure changes, make them non-reusable across environments, and expose internal network topology in source control."
+    },
+    {
+      "id": "ANS-HARD-002",
+      "name": "No hardcoded usernames or account names",
+      "severity": "error",
+      "category": "Ansible - Hardcoding & Sensitive Data",
+      "description": "Usernames, service account names, and login names must not be hardcoded. Use variables from group_vars or vault.",
+      "rationale": "Hardcoded usernames cannot be changed without editing playbooks. Service accounts differ between environments and organisations. Variables allow reuse without code modification."
+    },
+    {
+      "id": "ANS-HARD-003",
+      "name": "No hardcoded port numbers in tasks",
+      "severity": "warning",
+      "category": "Ansible - Hardcoding & Sensitive Data",
+      "description": "Port numbers used in tasks must reference variables, not be hardcoded integers.",
+      "rationale": "Ports change between environments and during security hardening. Hardcoded ports make playbooks environment-specific and require code changes instead of variable overrides."
+    },
+    {
+      "id": "ANS-HARD-004",
+      "name": "No hardcoded file system paths",
+      "severity": "warning",
+      "category": "Ansible - Hardcoding & Sensitive Data",
+      "description": "Absolute file system paths must not be hardcoded in tasks. Use variables for base paths that differ between environments.",
+      "rationale": "Deployment paths, log directories, and config file locations differ between environments and Linux distributions. Hardcoded paths make roles non-portable and require forking for each environment."
+    },
+    {
+      "id": "ANS-HARD-005",
+      "name": "No hardcoded URLs or hostnames in tasks",
+      "severity": "error",
+      "category": "Ansible - Hardcoding & Sensitive Data",
+      "description": "URLs and hostnames used in tasks (uri module, get_url, yum repo URLs) must be variables, not hardcoded strings.",
+      "rationale": "Hardcoded URLs reference specific environments and cannot be overridden without editing playbooks. URLs also change (servers move, CDNs change) and must be centrally managed."
+    },
+    {
+      "id": "ANS-HARD-006",
+      "name": "Sensitive module parameters must use vault variables",
+      "severity": "critical",
+      "category": "Ansible - Hardcoding & Sensitive Data",
+      "description": "Module parameters that accept sensitive data (passwords, tokens, keys) must reference vault-encrypted variables, identifiable by 'vault_' prefix convention.",
+      "rationale": "Sensitive parameters passed as plain strings are visible in the playbook, in Ansible logs, and in AAP job output. All secrets must come from encrypted vault variables."
+    },
+    {
+      "id": "ANS-HARD-007",
+      "name": "No hardcoded AWS/Azure/GCP account IDs or subscription IDs",
+      "severity": "critical",
+      "category": "Ansible - Hardcoding & Sensitive Data",
+      "description": "Cloud account IDs, subscription IDs, and tenant IDs must not be hardcoded. They must come from variables.",
+      "rationale": "Account IDs and subscription IDs are sensitive identifiers that expose your cloud account structure. They differ between environments (dev/prod accounts) and must not be stored in plain text in playbooks."
+    },
+    {
+      "id": "ANS-HARD-008",
+      "name": "Do not print sensitive variables with debug module",
+      "severity": "error",
+      "category": "Ansible - Hardcoding & Sensitive Data",
+      "description": "The debug module must not print variables that contain passwords, tokens, keys, or other sensitive data.",
+      "rationale": "ansible.builtin.debug prints variable values to stdout and logs. If a sensitive variable is printed, its value is exposed in all places where logs are stored, including AAP, CI/CD systems, and log aggregators."
+    },
+    {
+      "id": "ANS-IDE-001",
+      "name": "Use FQCN (Fully Qualified Collection Names) for all modules",
+      "severity": "error",
+      "category": "Idempotency & Structure",
+      "description": "Always use the fully qualified collection name for modules (e.g., ansible.builtin.copy not just copy). This prevents ambiguity when multiple collections are installed.",
+      "rationale": "Short module names are resolved by collection priority order, which can change. FQCNs are explicit, unambiguous, and future-proof."
+    },
+    {
+      "id": "ANS-IDE-002",
+      "name": "Avoid using 'ignore_errors' broadly",
+      "severity": "warning",
+      "category": "Idempotency & Structure",
+      "description": "Do not use 'ignore_errors: true' as a catch-all. Use 'failed_when' or 'block/rescue' for proper error handling.",
+      "rationale": "Ignoring errors masks real failures and makes debugging impossible. If a task is expected to sometimes fail, model that expectation with 'failed_when'."
+    },
+    {
+      "id": "ANS-IDE-003",
+      "name": "Use 'state' parameter for idempotency",
+      "severity": "error",
+      "category": "Idempotency & Structure",
+      "description": "Modules that support a 'state' parameter (package, service, file, user) must always include it explicitly.",
+      "rationale": "Omitting 'state' relies on module defaults, which may change across versions. Explicit state declarations make intent clear and ensure idempotency."
+    },
+    {
+      "id": "ANS-IDE-004",
+      "name": "Tags must be applied to all tasks in shared roles",
+      "severity": "warning",
+      "category": "Idempotency & Structure",
+      "description": "Tasks in shared/reusable roles should have tags to allow selective execution.",
+      "rationale": "Tags allow operators to run specific subsets of tasks during partial deployments or troubleshooting without running the full playbook."
+    },
+    {
+      "id": "ANS-IDE-005",
+      "name": "Handlers must have unique descriptive names",
+      "severity": "error",
+      "category": "Idempotency & Structure",
+      "description": "Handler names must be unique within a playbook and descriptive enough to understand what they do without reading the task body.",
+      "rationale": "Duplicate handler names cause unpredictable behavior — only the last definition is used. Generic handler names make it impossible to understand what a 'notify' trigger will do."
+    },
+    {
+      "id": "ANS-IDE-006",
+      "name": "Playbooks must not exceed 150 lines",
+      "severity": "warning",
+      "category": "Idempotency & Structure",
+      "description": "Playbooks longer than 150 lines should be split into roles or imported task files.",
+      "rationale": "Long playbooks become difficult to read, test, and maintain. Splitting into roles promotes reuse and follows single-responsibility principles."
+    },
+    {
+      "id": "ANS-IDE-007",
+      "name": "Use 'block' for grouping related tasks and error handling",
+      "severity": "info",
+      "category": "Idempotency & Structure",
+      "description": "Group logically related tasks using 'block' and provide 'rescue' sections for error handling instead of scattered ignore_errors.",
+      "rationale": "Blocks make logical grouping explicit and allow proper try/catch-style error handling with rescue and always sections."
+    },
+    {
+      "id": "ANS-KICS-AWS-001",
+      "name": "S3 Bucket With Public Access",
+      "severity": "critical",
+      "category": "Cloud Security - AWS",
+      "description": "S3 buckets must not allow public access. The permission parameter must not be set to public-read, public-read-write, or authenticated-read.",
+      "rationale": "Publicly accessible S3 buckets are one of the most common causes of data breaches. Any data stored in a public bucket is accessible to anyone on the internet."
+    },
+    {
+      "id": "ANS-KICS-AWS-002",
+      "name": "Security Group With Unrestricted Access To SSH",
+      "severity": "critical",
+      "category": "Cloud Security - AWS",
+      "description": "EC2 security groups must not allow unrestricted inbound access on port 22 (SSH) from 0.0.0.0/0 or ::/0.",
+      "rationale": "Open SSH access exposes instances to brute-force attacks and credential stuffing from the entire internet. SSH should be restricted to known management IP ranges."
+    },
+    {
+      "id": "ANS-KICS-AWS-003",
+      "name": "RDS DB Instance Publicly Accessible",
+      "severity": "critical",
+      "category": "Cloud Security - AWS",
+      "description": "RDS instances must not be publicly accessible. The publicly_accessible parameter must be false or absent.",
+      "rationale": "A publicly accessible RDS instance is reachable from the internet, dramatically increasing the attack surface for database credential attacks and SQL injection."
+    },
+    {
+      "id": "ANS-KICS-AWS-004",
+      "name": "Hardcoded AWS Access Key",
+      "severity": "critical",
+      "category": "Cloud Security - AWS",
+      "description": "AWS access keys must never be hardcoded in playbooks. Use IAM roles, environment variables, or AWS Secrets Manager.",
+      "rationale": "Hardcoded AWS access keys committed to source control are a primary attack vector. Keys are frequently scraped from public or private repositories by automated scanners."
+    },
+    {
+      "id": "ANS-KICS-AWS-005",
+      "name": "DB Instance Storage Not Encrypted",
+      "severity": "error",
+      "category": "Cloud Security - AWS",
+      "description": "RDS DB instances must have storage encryption enabled. Set storage_encrypted to true.",
+      "rationale": "Unencrypted database storage is readable if the underlying disk or snapshot is accessed. Encryption at rest is a baseline compliance requirement for most standards (PCI-DSS, HIPAA, SOC2)."
+    },
+    {
+      "id": "ANS-KICS-AWS-006",
+      "name": "EBS Volume Encryption Disabled",
+      "severity": "error",
+      "category": "Cloud Security - AWS",
+      "description": "EBS volumes must be encrypted. Set the encrypted parameter to true when creating volumes.",
+      "rationale": "Unencrypted EBS volumes expose data if the volume is detached and attached to another instance, or if an EBS snapshot is shared. Encryption prevents this class of attack."
+    },
+    {
+      "id": "ANS-KICS-AWS-007",
+      "name": "IAM Policy Grants Full Permissions",
+      "severity": "error",
+      "category": "Cloud Security - AWS",
+      "description": "IAM policies must not grant wildcard (*) permissions on all actions and resources. Always specify the minimum required permissions.",
+      "rationale": "Over-permissive IAM policies violate least-privilege principles. A compromised identity with full permissions can access and destroy all resources in the account."
+    },
+    {
+      "id": "ANS-KICS-AWS-008",
+      "name": "CloudTrail Logging Disabled",
+      "severity": "error",
+      "category": "Cloud Security - AWS",
+      "description": "CloudTrail must have logging enabled. The enable_logging parameter must not be set to false.",
+      "rationale": "CloudTrail provides an audit trail of all API calls in an AWS account. Disabling it removes visibility into who is doing what in your environment, making incident response impossible."
+    },
+    {
+      "id": "ANS-KICS-AWS-009",
+      "name": "S3 Bucket Without Server-Side Encryption",
+      "severity": "error",
+      "category": "Cloud Security - AWS",
+      "description": "S3 buckets must have server-side encryption configured. Set encryption rules with AES256 or aws:kms.",
+      "rationale": "Without server-side encryption, data stored in S3 is written to disk unencrypted. If AWS infrastructure is compromised, this data can be accessed in plaintext."
+    },
+    {
+      "id": "ANS-KICS-AWS-010",
+      "name": "Remote Desktop Port Open To Internet",
+      "severity": "error",
+      "category": "Cloud Security - AWS",
+      "description": "Security groups must not allow unrestricted inbound access on port 3389 (RDP) from 0.0.0.0/0.",
+      "rationale": "Open RDP access is a primary vector for ransomware and remote code execution attacks. RDP should only be accessible via VPN or bastion hosts."
+    },
+    {
+      "id": "ANS-KICS-AWS-011",
+      "name": "RDS With Backup Disabled",
+      "severity": "warning",
+      "category": "Cloud Security - AWS",
+      "description": "RDS instances must have automated backups enabled. Set backup_retention_period to 7 or more days.",
+      "rationale": "Without automated backups, data loss from corruption, accidental deletion, or ransomware cannot be recovered. A backup retention period of at least 7 days is recommended."
+    },
+    {
+      "id": "ANS-KICS-AWS-012",
+      "name": "Authentication Without MFA",
+      "severity": "warning",
+      "category": "Cloud Security - AWS",
+      "description": "IAM users should have MFA devices assigned and enforced. Avoid creating users without associating MFA.",
+      "rationale": "Without MFA, a compromised password grants full access to the account. MFA significantly reduces the risk of account takeover from credential phishing or leaks."
+    },
+    {
+      "id": "ANS-KICS-AWS-013",
+      "name": "EC2 Instance Has Public IP",
+      "severity": "warning",
+      "category": "Cloud Security - AWS",
+      "description": "EC2 instances should not have public IP addresses assigned unless absolutely necessary. Use private subnets and a load balancer.",
+      "rationale": "Directly internet-facing EC2 instances have a larger attack surface. Use private subnets with NAT gateways for outbound access, and load balancers for inbound."
+    },
+    {
+      "id": "ANS-KICS-AWS-014",
+      "name": "S3 Bucket Without Versioning",
+      "severity": "warning",
+      "category": "Cloud Security - AWS",
+      "description": "S3 buckets storing important data should have versioning enabled to protect against accidental deletion or overwrite.",
+      "rationale": "Without versioning, accidentally deleted or overwritten objects cannot be recovered. Versioning also enables MFA-Delete, which prevents unauthorized bucket emptying."
+    },
+    {
+      "id": "ANS-KICS-AWS-015",
+      "name": "Instance Uses Metadata Service IMDSv1",
+      "severity": "warning",
+      "category": "Cloud Security - AWS",
+      "description": "EC2 instances must use IMDSv2 (token-based metadata service). Set http_tokens to required.",
+      "rationale": "IMDSv1 is vulnerable to SSRF attacks where an attacker can trick an application into making requests to the metadata service and retrieving instance credentials."
+    },
+    {
+      "id": "ANS-KICS-AZ-001",
+      "name": "SQLServer Ingress From Any IP",
+      "severity": "critical",
+      "category": "Cloud Security - Azure",
+      "description": "Azure SQL Server firewall rules must not allow access from all IP addresses (0.0.0.0 to 255.255.255.255).",
+      "rationale": "Allowing all IPs to reach a SQL Server exposes it to brute-force, injection, and exploitation attacks from the entire internet."
+    },
+    {
+      "id": "ANS-KICS-AZ-002",
+      "name": "Storage Account Not Forcing HTTPS",
+      "severity": "error",
+      "category": "Cloud Security - Azure",
+      "description": "Azure Storage accounts must enforce HTTPS-only access. Set https_only to true.",
+      "rationale": "Without HTTPS enforcement, clients can connect over unencrypted HTTP, exposing data in transit to interception. All storage traffic must be encrypted."
+    },
+    {
+      "id": "ANS-KICS-AZ-003",
+      "name": "Storage Account Not Using Latest TLS Version",
+      "severity": "error",
+      "category": "Cloud Security - Azure",
+      "description": "Azure Storage accounts must require a minimum TLS version of TLS1_2.",
+      "rationale": "TLS 1.0 and 1.1 have known vulnerabilities (BEAST, POODLE, etc.) and are deprecated. Enforce TLS 1.2 minimum to prevent downgrade attacks."
+    },
+    {
+      "id": "ANS-KICS-AZ-004",
+      "name": "Storage Container Is Publicly Accessible",
+      "severity": "critical",
+      "category": "Cloud Security - Azure",
+      "description": "Azure storage containers must not have public_access set to container or blob.",
+      "rationale": "Public blob containers expose all stored data to anonymous internet access without authentication. This is a common cause of data leakage incidents."
+    },
+    {
+      "id": "ANS-KICS-AZ-005",
+      "name": "MySQL SSL Connection Disabled",
+      "severity": "error",
+      "category": "Cloud Security - Azure",
+      "description": "Azure MySQL server must enforce SSL connections. Set enforce_ssl to true in server configuration.",
+      "rationale": "Disabling SSL for database connections exposes credentials and query data to network interception. Database connections must always be encrypted."
+    },
+    {
+      "id": "ANS-KICS-AZ-006",
+      "name": "Web App Accepting Traffic Other Than HTTPS",
+      "severity": "error",
+      "category": "Cloud Security - Azure",
+      "description": "Azure Web Apps must only accept HTTPS traffic. Set https_only to true.",
+      "rationale": "Allowing HTTP traffic exposes users to session hijacking, credential interception, and man-in-the-middle attacks. All web traffic must be HTTPS."
+    },
+    {
+      "id": "ANS-KICS-AZ-007",
+      "name": "Azure Instance Using Basic Authentication",
+      "severity": "error",
+      "category": "Cloud Security - Azure",
+      "description": "Azure Linux VMs must disable password authentication and use SSH key pairs only.",
+      "rationale": "Password-based SSH authentication is vulnerable to brute-force attacks. SSH key authentication is far more secure and should always be used for Azure VMs."
+    },
+    {
+      "id": "ANS-KICS-AZ-008",
+      "name": "AKS RBAC Disabled",
+      "severity": "error",
+      "category": "Cloud Security - Azure",
+      "description": "Azure Kubernetes Service clusters must have RBAC enabled for access control.",
+      "rationale": "Without RBAC, all authenticated users have the same level of access to the cluster, making it impossible to enforce least-privilege access to Kubernetes resources."
+    },
+    {
+      "id": "ANS-KICS-CFG-001",
+      "name": "Host Key Checking Disabled",
+      "severity": "critical",
+      "category": "Cloud Security - Azure",
+      "description": "host_key_checking must never be set to False in ansible.cfg or playbooks. SSH host key checking must always be enabled.",
+      "rationale": "Disabling host key checking removes protection against man-in-the-middle attacks. An attacker can intercept the connection by presenting their own SSH key and Ansible will not detect it."
+    },
+    {
+      "id": "ANS-KICS-CFG-002",
+      "name": "Allow Unsafe Lookups Enabled",
+      "severity": "error",
+      "category": "Cloud Security - Azure",
+      "description": "allow_unsafe_lookups must not be enabled in ansible.cfg. Unsafe lookups bypass Jinja2 template security.",
+      "rationale": "Enabling unsafe lookups allows lookup plugin results to be used unsafely in Jinja2 templates, which can lead to template injection vulnerabilities if lookup results contain user-controlled data."
+    },
+    {
+      "id": "ANS-KICS-CFG-003",
+      "name": "Communication Over HTTP in Defaults",
+      "severity": "error",
+      "category": "Cloud Security - Azure",
+      "description": "Ansible configuration must not use HTTP for communication. Only HTTPS connections are permitted.",
+      "rationale": "HTTP transmits data in plaintext, including credentials and task output. Any network path between Ansible and managed nodes must use encrypted protocols."
+    },
+    {
+      "id": "ANS-KICS-CFG-004",
+      "name": "StrictHostKeyChecking Disabled in SSH Args",
+      "severity": "critical",
+      "category": "Cloud Security - Azure",
+      "description": "SSH common args must not include -o StrictHostKeyChecking=no or -o UserKnownHostsFile=/dev/null. These disable SSH security checks.",
+      "rationale": "These SSH options bypass host verification entirely, making the connection trivially vulnerable to man-in-the-middle attacks across all managed hosts."
+    },
+    {
+      "id": "ANS-KICS-CFG-005",
+      "name": "No_log Not Set For Sensitive Modules",
+      "severity": "error",
+      "category": "Cloud Security - Azure",
+      "description": "Tasks using modules that handle credentials (uri with body, mysql_user, postgresql_user, user with password) must set no_log: true.",
+      "rationale": "Ansible logs all task parameters by default. Without no_log, passwords and tokens appear in stdout, log files, and AAP job output where they can be captured."
+    },
+    {
+      "id": "ANS-KICS-GCP-001",
+      "name": "SQL DB Instance With SSL Disabled",
+      "severity": "critical",
+      "category": "Cloud Security - Azure",
+      "description": "GCP Cloud SQL instances must require SSL for all connections. Set require_ssl to true.",
+      "rationale": "Without SSL enforcement, database credentials and query data are transmitted in plaintext over the network, vulnerable to interception."
+    },
+    {
+      "id": "ANS-KICS-GCP-002",
+      "name": "GKE Legacy Authorization Enabled",
+      "severity": "error",
+      "category": "Cloud Security - Azure",
+      "description": "GKE clusters must not have legacy ABAC authorization enabled. Use RBAC instead.",
+      "rationale": "Legacy ABAC in GKE is overly permissive and does not support fine-grained access control. RBAC provides proper least-privilege access and should always be used."
+    },
+    {
+      "id": "ANS-KICS-GCP-003",
+      "name": "Compute Instance Is Publicly Accessible",
+      "severity": "error",
+      "category": "Cloud Security - Azure",
+      "description": "GCP Compute instances should not have external IP addresses unless required. Avoid access_type: ONE_TO_ONE_NAT for internal workloads.",
+      "rationale": "Publicly accessible compute instances increase attack surface. Use private IP addresses and route external traffic through load balancers."
+    },
+    {
+      "id": "ANS-KICS-GCP-004",
+      "name": "SQL DB Instance Backup Disabled",
+      "severity": "error",
+      "category": "Cloud Security - Azure",
+      "description": "GCP Cloud SQL instances must have automated backups enabled.",
+      "rationale": "Without backups, data loss from corruption or deletion is unrecoverable. Automated backups are essential for any production database."
+    },
+    {
+      "id": "ANS-NAM-001",
+      "name": "Tasks must have a name",
+      "severity": "error",
+      "category": "Naming Conventions",
+      "description": "Every task must include a descriptive 'name' field. Unnamed tasks are impossible to identify in logs and make debugging very difficult.",
+      "rationale": "Without names, ansible-playbook output shows cryptic module names (e.g. \"TASK [ansible.builtin.copy]\") making it impossible to understand what is happening during a run."
+    },
+    {
+      "id": "ANS-NAM-002",
+      "name": "Task names must not be generic",
+      "severity": "warning",
+      "category": "Naming Conventions",
+      "description": "Task names should be descriptive and unique. Avoid generic names like \"task\", \"run\", \"execute\", \"do this\".",
+      "rationale": "Generic names give no context about what the task does. A developer reading logs should instantly understand what happened."
+    },
+    {
+      "id": "ANS-NAM-003",
+      "name": "Variable names must use snake_case",
+      "severity": "error",
+      "category": "Naming Conventions",
+      "description": "All variable names must use lowercase snake_case. No camelCase, PascalCase, or hyphens.",
+      "rationale": "Consistent naming prevents subtle bugs. Ansible variables are case-sensitive and mixing conventions causes unpredictable behavior."
+    },
+    {
+      "id": "ANS-NAM-004",
+      "name": "Role names must use snake_case",
+      "severity": "warning",
+      "category": "Naming Conventions",
+      "description": "Role names should use snake_case and be descriptive of their purpose.",
+      "rationale": "Consistent role naming makes the codebase navigable and roles reusable across projects."
+    },
+    {
+      "id": "ANS-NAM-005",
+      "name": "Play names must be present and descriptive",
+      "severity": "error",
+      "category": "Naming Conventions",
+      "description": "Every play in a playbook must have a 'name' field describing its purpose.",
+      "rationale": "Play names appear in output and are essential for understanding execution flow in multi-play playbooks."
+    },
+    {
+      "id": "ANS-SEC-001",
+      "name": "No hardcoded passwords or secrets",
+      "severity": "critical",
+      "category": "Security",
+      "description": "Passwords, API keys, tokens, and secrets must never be hardcoded in playbooks, vars files, or role defaults. Use Ansible Vault, environment variables, or an external secrets manager.",
+      "rationale": "Hardcoded secrets will be committed to source control, exposed in logs, and available to anyone with read access to the repository. This is a critical security risk."
+    },
+    {
+      "id": "ANS-SEC-002",
+      "name": "Avoid shell/command modules when alternatives exist",
+      "severity": "warning",
+      "category": "Security",
+      "description": "Prefer purpose-built Ansible modules over 'shell' or 'command'. Use shell/command only when no module exists for the task.",
+      "rationale": "Shell and command modules bypass idempotency, skip change tracking, and are harder to read. They also make it easier to introduce injection vulnerabilities."
+    },
+    {
+      "id": "ANS-SEC-003",
+      "name": "No_log must be set for sensitive tasks",
+      "severity": "error",
+      "category": "Security",
+      "description": "Tasks that handle passwords, tokens, or other sensitive data must set 'no_log: true' to prevent secrets from appearing in output logs.",
+      "rationale": "Ansible logs task output by default. Without no_log, secrets can be exposed in terminal output, log files, and AAP job logs."
+    },
+    {
+      "id": "ANS-SEC-004",
+      "name": "Become should be scoped to tasks, not entire plays",
+      "severity": "warning",
+      "category": "Security",
+      "description": "Avoid setting 'become: true' at the play level unless every task in the play requires it. Scope privilege escalation to individual tasks.",
+      "rationale": "Play-level become grants root access to ALL tasks in the play, violating least-privilege principles. A misconfigured task running as root can cause catastrophic damage."
+    },
+    {
+      "id": "ANS-SEC-005",
+      "name": "File permissions must be explicitly set",
+      "severity": "warning",
+      "category": "Security",
+      "description": "When using the file or copy module, always explicitly set 'mode' to avoid inheriting unpredictable permissions from the environment.",
+      "rationale": "Relying on umask or default permissions leads to inconsistent results across environments. Always be explicit about who can read/write/execute files."
+    },
+    {
+      "id": "ANS-STY-001",
+      "name": "Use YAML true/false not yes/no",
+      "severity": "warning",
+      "category": "Style & Formatting",
+      "description": "Use boolean literals 'true' and 'false' instead of 'yes' and 'no' in YAML files.",
+      "rationale": "While YAML 1.1 accepts yes/no, YAML 1.2 (used by modern tools) only recognizes true/false. Using yes/no creates portability issues."
+    },
+    {
+      "id": "ANS-STY-002",
+      "name": "Variables must use double braces with spaces",
+      "severity": "warning",
+      "category": "Style & Formatting",
+      "description": "Jinja2 variables must be written with spaces inside braces — '{{ var }}' not '{{var}}'.",
+      "rationale": "Consistent spacing inside Jinja2 delimiters improves readability. This matches the style enforced by ansible-lint and yaml-lint."
+    },
+    {
+      "id": "ANS-STY-003",
+      "name": "Files must end with a newline",
+      "severity": "info",
+      "category": "Style & Formatting",
+      "description": "All YAML files must end with a single newline character.",
+      "rationale": "Missing trailing newlines cause issues with file concatenation, diffs, and some YAML parsers."
+    },
+    {
+      "id": "ANS-STY-004",
+      "name": "Line length must not exceed 160 characters",
+      "severity": "warning",
+      "category": "Style & Formatting",
+      "description": "Lines should not exceed 160 characters. Use YAML block scalars or multiline syntax for long strings.",
+      "rationale": "Long lines are difficult to read in code reviews and terminal output. They also cause horizontal scrolling in editors without wrapping."
+    },
+    {
+      "id": "ANS-STY-005",
+      "name": "Playbooks must start with YAML document marker",
+      "severity": "info",
+      "category": "Style & Formatting",
+      "description": "All playbook files should start with '---' (YAML document start marker).",
+      "rationale": "The document start marker clearly identifies the file as YAML and is required by strict YAML parsers. It also signals to editors to enable YAML syntax highlighting."
+    },
+    {
+      "id": "ANS-STY-006",
+      "name": "Comments should explain 'why', not 'what'",
+      "severity": "info",
+      "category": "Style & Formatting",
+      "description": "Comments in playbooks should explain the reasoning behind a decision, not just restate what the code does.",
+      "rationale": "Self-documenting code describes what it does. Comments add value by explaining WHY a particular approach was chosen, especially for non-obvious decisions."
+    },
+    {
+      "id": "ANS-STY-007",
+      "name": "Use quotes consistently for strings",
+      "severity": "info",
+      "category": "Style & Formatting",
+      "description": "String values containing special characters, Jinja2 expressions, or colons must be quoted. Use double quotes for Jinja2 expressions.",
+      "rationale": "Unquoted strings with special YAML characters can cause parse errors that are difficult to debug. Consistent quoting improves clarity."
+    },
+    {
+      "id": "BASH-ERR-001",
+      "name": "Scripts must use set -e (errexit)",
+      "severity": "error",
+      "category": "Bash - Error Handling",
+      "description": "Every script must include 'set -e' or 'set -o errexit' to exit immediately when a command returns a non-zero exit code.",
+      "rationale": "Without 'set -e', a script continues executing after a command failure. This means subsequent commands may run against a broken or partially-configured state, often causing cascading failures that are much harder to diagnose."
+    },
+    {
+      "id": "BASH-ERR-002",
+      "name": "Scripts must use set -u (nounset)",
+      "severity": "error",
+      "category": "Bash - Error Handling",
+      "description": "Every script must include 'set -u' or 'set -o nounset' to treat unset variables as errors.",
+      "rationale": "Without 'set -u', referencing an unset variable silently expands to an empty string. This causes subtle bugs — for example, 'rm -rf \\$PREFIX/' becomes 'rm -rf /' if PREFIX is unset."
+    },
+    {
+      "id": "BASH-ERR-003",
+      "name": "Scripts must use set -o pipefail",
+      "severity": "error",
+      "category": "Bash - Error Handling",
+      "description": "Every script must include 'set -o pipefail' so that pipeline failures are not masked by the last command's exit code.",
+      "rationale": "Without pipefail, 'failing_cmd | tee output.log' returns exit code 0 because tee succeeded. The failure of failing_cmd is silently ignored. pipefail makes any pipeline fail if any command in it fails."
+    },
+    {
+      "id": "BASH-ERR-004",
+      "name": "Use trap to handle unexpected exits and signals",
+      "severity": "error",
+      "category": "Bash - Error Handling",
+      "description": "Scripts must define a trap for EXIT and ERR signals to perform cleanup and log failures gracefully.",
+      "rationale": "Without a trap, a script that exits unexpectedly (e.g. from 'set -e') leaves no trace of where it failed, and any temporary resources are not cleaned up. Traps ensure consistent cleanup and error reporting."
+    },
+    {
+      "id": "BASH-ERR-005",
+      "name": "Error messages must be written to stderr",
+      "severity": "warning",
+      "category": "Bash - Error Handling",
+      "description": "Error and warning messages must be written to stderr (>&2), not stdout. Stdout is for data output only.",
+      "rationale": "Writing errors to stdout mixes them with data output, breaking pipelines and making it impossible for callers to separate results from error messages. stderr is the correct channel for diagnostics."
+    },
+    {
+      "id": "BASH-ERR-006",
+      "name": "Check exit code of critical commands explicitly",
+      "severity": "error",
+      "category": "Bash - Error Handling",
+      "description": "Critical commands (ssh, scp, rsync, curl, ansible-playbook) must have their exit codes explicitly handled with '|| exit', '|| return', or a conditional check.",
+      "rationale": "Even with 'set -e', some commands produce non-zero exit codes in expected conditions (e.g. grep returns 1 when no match). Explicit handling makes intent clear and provides informative error messages."
+    },
+    {
+      "id": "BASH-ERR-007",
+      "name": "Functions must return meaningful exit codes",
+      "severity": "warning",
+      "category": "Bash - Error Handling",
+      "description": "Functions that can fail must explicitly return a non-zero exit code on failure using 'return 1' (or a specific code). Do not rely on the implicit exit code of the last command.",
+      "rationale": "Functions that always return 0 (success) regardless of outcome make it impossible for callers to detect failures. Explicit return codes allow calling code to use 'if my_function; then ...' patterns reliably."
+    },
+    {
+      "id": "BASH-ERR-008",
+      "name": "Use errexit-safe conditional patterns",
+      "severity": "warning",
+      "category": "Bash - Error Handling",
+      "description": "Do not use '! command' or 'command && ...' as the only form of error checking when set -e is active — use explicit if/then blocks.",
+      "rationale": "With 'set -e', a negated command '! failing_cmd' suppresses the exit-on-error behaviour. This creates an inconsistency where errors inside negated commands are silently ignored, against the intent of 'set -e'."
+    },
+    {
+      "id": "BASH-ERR-009",
+      "name": "Log script start, end, and key milestones",
+      "severity": "info",
+      "category": "Bash - Error Handling",
+      "description": "Scripts should log their start time, key milestones, and end time with exit status to aid in debugging and audit trails.",
+      "rationale": "Without logging, a failed automated script run leaves no trace of what happened and how far it got. Structured log messages with timestamps are essential for post-failure diagnosis in CI/CD and production environments."
+    },
+    {
+      "id": "BASH-ERR-010",
+      "name": "Validate required environment variables at script start",
+      "severity": "error",
+      "category": "Bash - Error Handling",
+      "description": "Scripts must validate that all required environment variables are set and non-empty at the start, before any operations are performed.",
+      "rationale": "Discovering a missing environment variable halfway through a script can leave the system in a partially-configured state. Fail fast at the start with a clear error message listing which variables are missing."
+    },
+    {
+      "id": "BASH-ERR-011",
+      "name": "Retry logic required for network operations",
+      "severity": "info",
+      "category": "Bash - Error Handling",
+      "description": "Network operations (curl, wget, ssh, scp) in production scripts should include retry logic with a maximum attempt count and backoff.",
+      "rationale": "Network operations fail transiently in production (DNS blips, rate limits, brief service interruptions). Scripts without retries fail the entire deployment for temporary issues that would self-resolve. Implement retries with exponential backoff."
+    },
+    {
+      "id": "BASH-HARD-001",
+      "name": "No hardcoded IP addresses",
+      "severity": "error",
+      "category": "Bash - Hardcoding & Sensitive Data",
+      "description": "IP addresses must not be hardcoded in shell scripts. Use environment variables or configuration files.",
+      "rationale": "Hardcoded IP addresses break scripts when infrastructure changes and expose internal network topology in source control. They also differ between environments, preventing script reuse."
+    },
+    {
+      "id": "BASH-HARD-002",
+      "name": "No hardcoded hostnames or FQDNs",
+      "severity": "error",
+      "category": "Bash - Hardcoding & Sensitive Data",
+      "description": "Server hostnames and FQDNs must not be hardcoded in shell scripts. Use environment variables.",
+      "rationale": "Hostnames differ between environments and change when infrastructure is rebuilt. Hardcoded hostnames require code changes instead of configuration changes."
+    },
+    {
+      "id": "BASH-HARD-003",
+      "name": "No hardcoded port numbers",
+      "severity": "warning",
+      "category": "Bash - Hardcoding & Sensitive Data",
+      "description": "Port numbers must not be hardcoded in shell scripts. Declare them as named variables at the top of the script.",
+      "rationale": "Port numbers change during security hardening, when running multiple instances, and between environments. Named variables make them easy to find and change centrally."
+    },
+    {
+      "id": "BASH-HARD-004",
+      "name": "No hardcoded usernames or account names",
+      "severity": "error",
+      "category": "Bash - Hardcoding & Sensitive Data",
+      "description": "System usernames, service account names, and remote login users must not be hardcoded. Use environment variables.",
+      "rationale": "Username conventions differ between organisations and environments. Hardcoding a specific username creates an implicit dependency on that account existing with that exact name."
+    },
+    {
+      "id": "BASH-HARD-005",
+      "name": "No hardcoded file system paths",
+      "severity": "warning",
+      "category": "Bash - Hardcoding & Sensitive Data",
+      "description": "Base deployment paths, application directories, and log directories must use variables, not hardcoded strings.",
+      "rationale": "Deployment paths differ between servers, organisations, and environments. Hardcoded paths prevent script reuse and require editing scripts rather than changing configuration."
+    },
+    {
+      "id": "BASH-HARD-006",
+      "name": "No hardcoded credentials or secrets in variable assignments",
+      "severity": "critical",
+      "category": "Bash - Hardcoding & Sensitive Data",
+      "description": "Passwords, tokens, API keys, and any secret values must never appear as hardcoded string values in variable assignments.",
+      "rationale": "Hardcoded secrets in scripts are committed to source control, visible in process listings (ps aux), stored in shell history, and appear in CI/CD logs. They must come from a secrets manager or environment."
+    },
+    {
+      "id": "BASH-HARD-007",
+      "name": "Do not log sensitive variable values",
+      "severity": "error",
+      "category": "Bash - Hardcoding & Sensitive Data",
+      "description": "Echo or printf statements must not print the values of variables that contain credentials, tokens, or passwords.",
+      "rationale": "Log messages containing credential values appear in CI/CD logs, terminal history, and log files. They are often stored indefinitely and accessible to a much wider audience than intended."
+    },
+    {
+      "id": "BASH-HARD-008",
+      "name": "No hardcoded AWS account IDs or cloud resource identifiers",
+      "severity": "critical",
+      "category": "Bash - Hardcoding & Sensitive Data",
+      "description": "AWS account IDs, subscription IDs, resource ARNs, and cloud-specific identifiers must not be hardcoded. Use environment variables.",
+      "rationale": "Cloud account IDs and ARNs are environment-specific and sensitive. Hardcoding them prevents environment promotion and exposes your cloud account structure in source control."
+    },
+    {
+      "id": "BASH-HARD-009",
+      "name": "Mask sensitive values before logging to files",
+      "severity": "error",
+      "category": "Bash - Hardcoding & Sensitive Data",
+      "description": "When writing logs that may include sensitive context, mask or omit credential values. Use a logging function that strips sensitive fields.",
+      "rationale": "Log files are often retained long-term, shipped to log aggregators, and accessible to a wide audience. Sensitive values written to log files can persist for months or years after rotation."
+    },
+    {
+      "id": "BASH-IDEM-001",
+      "name": "Check before creating directories",
+      "severity": "error",
+      "category": "Bash - Idempotency",
+      "description": "Use 'mkdir -p' or check with '[ -d ]' before creating directories. Never call 'mkdir' without -p or a prior existence check.",
+      "rationale": "Plain 'mkdir' fails with an error if the directory already exists, breaking re-runs. Using 'mkdir -p' silently succeeds if the directory is already present, making the operation idempotent."
+    },
+    {
+      "id": "BASH-IDEM-002",
+      "name": "Check before creating files",
+      "severity": "warning",
+      "category": "Bash - Idempotency",
+      "description": "Before creating a file with '>', check whether it already exists and contains the expected content. Unconditional writes overwrite files on every run.",
+      "rationale": "Unconditionally redirecting output to a file changes its modification time and content on every run, even when nothing has changed. This triggers downstream watchers, invalidates caches, and causes unnecessary restarts."
+    },
+    {
+      "id": "BASH-IDEM-003",
+      "name": "Check before adding lines to files",
+      "severity": "warning",
+      "category": "Bash - Idempotency",
+      "description": "Use grep to check whether a line already exists before appending it to a file with '>>'.",
+      "rationale": "Appending without checking causes duplicate entries on every re-run. Config files with duplicate lines can cause undefined behaviour, parse errors, or security issues (e.g. duplicate sudoers or hosts entries)."
+    },
+    {
+      "id": "BASH-IDEM-004",
+      "name": "Check before installing packages",
+      "severity": "error",
+      "category": "Bash - Idempotency",
+      "description": "Before installing packages with apt, yum, dnf, or pip, check whether they are already installed to avoid unnecessary re-installation and package manager locks.",
+      "rationale": "Running package managers unconditionally on every script execution is slow, requires network access, and can fail due to lock files or rate limits. Checking first makes the script faster and safer to re-run."
+    },
+    {
+      "id": "BASH-IDEM-005",
+      "name": "Check before adding users or groups",
+      "severity": "error",
+      "category": "Bash - Idempotency",
+      "description": "Before creating users with 'useradd' or groups with 'groupadd', check whether they already exist using 'id' or 'getent'.",
+      "rationale": "useradd and groupadd fail with an error if the user or group already exists. Without a guard check, re-running the script causes failures and may abort remaining setup steps."
+    },
+    {
+      "id": "BASH-IDEM-006",
+      "name": "Check before downloading files",
+      "severity": "warning",
+      "category": "Bash - Idempotency",
+      "description": "Before downloading a file with curl or wget, check whether the file already exists and is complete. Avoid unconditional downloads on every run.",
+      "rationale": "Unconditional downloads waste bandwidth, slow re-runs, and can fail due to rate limiting or network unavailability. Checking file existence first makes the operation idempotent and faster."
+    },
+    {
+      "id": "BASH-IDEM-007",
+      "name": "Check before starting or enabling services",
+      "severity": "warning",
+      "category": "Bash - Idempotency",
+      "description": "Before starting or enabling a service with systemctl, check its current status to avoid unnecessary restarts.",
+      "rationale": "Unconditionally calling 'systemctl start' when a service is already running causes an unnecessary restart and service interruption. Always check status before starting."
+    },
+    {
+      "id": "BASH-IDEM-008",
+      "name": "Check before creating symlinks",
+      "severity": "warning",
+      "category": "Bash - Idempotency",
+      "description": "Before creating a symlink with 'ln -s', check whether it already exists. Use 'ln -sf' for force-replace, or guard with '[ -L ]'.",
+      "rationale": "'ln -s' fails if the symlink already exists. Use 'ln -sf' to replace, or check with '-L' first. Without this, re-runs fail at the symlink step and skip remaining operations."
+    },
+    {
+      "id": "BASH-IDEM-009",
+      "name": "Use --force or check before chmod/chown on existing paths",
+      "severity": "info",
+      "category": "Bash - Idempotency",
+      "description": "When applying chmod or chown, consider checking the current permissions first to avoid unnecessary changes and audit log noise.",
+      "rationale": "Unconditional chmod/chown triggers audit events and file-modification timestamps on every run, even when nothing changes. For scripts run frequently, this creates noise in security monitoring systems."
+    },
+    {
+      "id": "BASH-IDEM-010",
+      "name": "Deletions must be guarded with existence checks",
+      "severity": "error",
+      "category": "Bash - Idempotency",
+      "description": "Before deleting files or directories, check that they exist. Never use 'rm -rf' without verifying the target exists and is the expected path.",
+      "rationale": "Running 'rm -rf' on a path that does not exist fails silently (with -f) but produces errors otherwise. More critically, deleting without checking the target is what you expect can cause catastrophic data loss on re-runs after partial state changes."
+    },
+    {
+      "id": "BASH-LINT-001",
+      "name": "Script must start with a shebang line",
+      "severity": "error",
+      "category": "Bash - Linting & Style",
+      "description": "Every bash script must begin with #!/bin/bash or #!/usr/bin/env bash as the first line.",
+      "rationale": "Without a shebang, the OS does not know which interpreter to use. The script may run under /bin/sh with different behaviour, or fail entirely when executed directly."
+    },
+    {
+      "id": "BASH-LINT-002",
+      "name": "Use",
+      "severity": "warning",
+      "category": "Bash - Linting & Style",
+      "description": "Prefer #!/usr/bin/env bash over #!/bin/bash to improve portability across systems.",
+      "rationale": "bash may not be at /bin/bash on all Unix-like systems (e.g. macOS, Alpine Linux). Using /usr/bin/env bash locates bash from PATH, making scripts more portable."
+    },
+    {
+      "id": "BASH-LINT-003",
+      "name": "Always quote variables",
+      "severity": "error",
+      "category": "Bash - Linting & Style",
+      "description": "Variables must be double-quoted when used in commands or comparisons. Unquoted variables are subject to word splitting and glob expansion.",
+      "rationale": "An unquoted variable containing spaces or glob characters causes the shell to split it into multiple words or expand it to matching filenames, leading to bugs that are very hard to diagnose."
+    },
+    {
+      "id": "BASH-LINT-004",
+      "name": "Use [[ ]] instead of [ ] for conditionals",
+      "severity": "warning",
+      "category": "Bash - Linting & Style",
+      "description": "Use [[ ]] (bash built-in) instead of [ ] (POSIX test) for conditional expressions in bash scripts.",
+      "rationale": "[[ ]] does not perform word splitting or glob expansion on variables, handles empty strings safely, supports && and || natively, and provides regex matching with =~. It is safer and more readable."
+    },
+    {
+      "id": "BASH-LINT-005",
+      "name": "Enable strict mode at script top",
+      "severity": "error",
+      "category": "Bash - Linting & Style",
+      "description": "Scripts must include 'set -euo pipefail' (or equivalent) near the top to enable strict error handling.",
+      "rationale": "Without strict mode: 'set -e' — script continues on command failure silently; 'set -u' — unset variables expand to empty string causing subtle bugs; 'set -o pipefail' — pipeline failures are masked by the last command's exit code."
+    },
+    {
+      "id": "BASH-LINT-006",
+      "name": "Use $(  ) instead of backticks for command substitution",
+      "severity": "warning",
+      "category": "Bash - Linting & Style",
+      "description": "Use $( command ) for command substitution instead of backtick syntax.",
+      "rationale": "The $() syntax nests cleanly, is more readable, and works identically. Backticks cannot be nested without escaping and are harder to read, especially inside complex expressions."
+    },
+    {
+      "id": "BASH-LINT-007",
+      "name": "Declare variables with local inside functions",
+      "severity": "warning",
+      "category": "Bash - Linting & Style",
+      "description": "Variables declared inside functions must use the 'local' keyword to prevent polluting the global scope.",
+      "rationale": "Without 'local', variables set inside functions become global and can accidentally overwrite variables in the calling scope, causing hard-to-trace bugs in larger scripts."
+    },
+    {
+      "id": "BASH-LINT-008",
+      "name": "Scripts must not exceed 200 lines",
+      "severity": "warning",
+      "category": "Bash - Linting & Style",
+      "description": "Shell scripts longer than 200 lines should be split into smaller, focused scripts or functions.",
+      "rationale": "Long scripts are difficult to read, test, and maintain. Functions should be extracted to separate files and sourced, or tasks decomposed into smaller scripts with clear responsibilities."
+    },
+    {
+      "id": "BASH-LINT-009",
+      "name": "Use printf instead of echo for formatted output",
+      "severity": "info",
+      "category": "Bash - Linting & Style",
+      "description": "Prefer printf over echo for output that includes escape sequences or formatted text.",
+      "rationale": "echo behaviour differs between shells and systems (e.g. echo -e is not portable). printf is consistent across all POSIX-compliant systems and has predictable behaviour with escape sequences."
+    },
+    {
+      "id": "BASH-LINT-010",
+      "name": "Constants should be uppercase and readonly",
+      "severity": "info",
+      "category": "Bash - Linting & Style",
+      "description": "Variables that are intended to be constants should be uppercase and declared with readonly.",
+      "rationale": "Using readonly prevents accidental reassignment. Uppercase naming signals to readers that a value is a constant, making intent clear and preventing subtle modification bugs."
+    },
+    {
+      "id": "BASH-LINT-011",
+      "name": "Always handle cd failure",
+      "severity": "error",
+      "category": "Bash - Linting & Style",
+      "description": "Every 'cd' command must either use '|| exit' error handling or be used with strict mode to prevent running commands in the wrong directory.",
+      "rationale": "If cd fails silently, subsequent commands run in the wrong directory. This can result in files being deleted, created, or modified in unintended locations — potentially catastrophic in deployment scripts."
+    },
+    {
+      "id": "BASH-LINT-012",
+      "name": "Functions must have descriptive names in snake_case",
+      "severity": "warning",
+      "category": "Bash - Linting & Style",
+      "description": "Function names must use snake_case and be descriptive of their purpose. Avoid single-letter or cryptic names.",
+      "rationale": "Descriptive function names make scripts self-documenting. A reader should understand what a function does without reading its body."
+    },
+    {
+      "id": "BASH-SEC-001",
+      "name": "No hardcoded passwords or secrets",
+      "severity": "critical",
+      "category": "Bash - Security",
+      "description": "Passwords, tokens, API keys, and secrets must never be hardcoded in shell scripts. Use environment variables, a secrets manager, or a vault.",
+      "rationale": "Hardcoded credentials in scripts will be committed to source control and visible to anyone with read access to the repository. They also appear in process listings (ps aux) and shell history."
+    },
+    {
+      "id": "BASH-SEC-002",
+      "name": "Avoid eval — command injection risk",
+      "severity": "critical",
+      "category": "Bash - Security",
+      "description": "The 'eval' command must not be used. It executes arbitrary strings as shell commands and is a primary vector for command injection.",
+      "rationale": "If any part of the string passed to eval is user-controlled or comes from an external source, an attacker can inject arbitrary commands. There is almost always a safer alternative."
+    },
+    {
+      "id": "BASH-SEC-003",
+      "name": "Validate all external input before use",
+      "severity": "error",
+      "category": "Bash - Security",
+      "description": "Variables sourced from environment variables, command arguments, or external sources must be validated before use in commands.",
+      "rationale": "Unvalidated external input can contain shell metacharacters or path traversal sequences that allow attackers to manipulate command execution or access unintended files."
+    },
+    {
+      "id": "BASH-SEC-004",
+      "name": "Do not disable SSL/TLS certificate verification",
+      "severity": "critical",
+      "category": "Bash - Security",
+      "description": "curl and wget must not use --insecure, -k, or --no-check-certificate flags that disable TLS certificate validation.",
+      "rationale": "Disabling certificate verification exposes connections to man-in-the-middle attacks. An attacker on the network can intercept the connection, serve malicious content, and the script will silently accept it."
+    },
+    {
+      "id": "BASH-SEC-005",
+      "name": "Avoid using /tmp without secure creation",
+      "severity": "error",
+      "category": "Bash - Security",
+      "description": "Temporary files must be created using mktemp, not by constructing predictable paths in /tmp manually.",
+      "rationale": "Predictable /tmp paths are vulnerable to symlink attacks (TOCTOU). An attacker can pre-create a symlink at the path, causing the script to write to an attacker-controlled location. mktemp creates files with unique, unpredictable names."
+    },
+    {
+      "id": "BASH-SEC-006",
+      "name": "Clean up temporary files on exit",
+      "severity": "warning",
+      "category": "Bash - Security",
+      "description": "Scripts that create temporary files must use a trap to ensure cleanup on exit, including on error.",
+      "rationale": "Temporary files left on disk may contain sensitive data (credentials, keys, intermediate output). Using 'trap ... EXIT' ensures cleanup runs even when the script exits due to an error."
+    },
+    {
+      "id": "BASH-SEC-007",
+      "name": "Do not run scripts as root unless explicitly required",
+      "severity": "warning",
+      "category": "Bash - Security",
+      "description": "Scripts must not require or assume root unless absolutely necessary. Add a check if root is truly needed, and document why.",
+      "rationale": "Running as root without necessity violates least-privilege principles. A bug in a root script can cause irreversible system damage. Scripts should run as the minimum required privilege level."
+    },
+    {
+      "id": "BASH-SEC-008",
+      "name": "Avoid storing credentials in shell history via environment",
+      "severity": "error",
+      "category": "Bash - Security",
+      "description": "Do not pass credentials as inline environment variable assignments before commands (e.g. PASSWORD=secret ./script.sh) — this exposes them in shell history and process listings.",
+      "rationale": "Inline credential assignments appear in shell history files (.bash_history) and in /proc/<pid>/environ, visible to other users and monitoring tools. Use a secrets file sourced securely or a dedicated secrets manager."
+    },
+    {
+      "id": "BASH-SEC-009",
+      "name": "Use secure permissions when creating files",
+      "severity": "error",
+      "category": "Bash - Security",
+      "description": "Files containing sensitive data must be created with restrictive permissions (0600 or tighter). Set umask 077 at the top of scripts that create sensitive files.",
+      "rationale": "Without explicit permission settings, files inherit the process umask, which is often 022 (world-readable). Sensitive data written to world-readable files is accessible to all users on the system."
+    },
+    {
+      "id": "BASH-SEC-010",
+      "name": "Avoid curl | bash pattern (remote code execution)",
+      "severity": "critical",
+      "category": "Bash - Security",
+      "description": "Never pipe the output of curl, wget, or any network command directly into bash, sh, or any interpreter.",
+      "rationale": "curl | bash executes arbitrary remote code without any verification. If the remote server is compromised or the connection is intercepted, malicious code runs immediately with the script's permissions. Always download, verify, then execute."
+    },
+    {
+      "id": "BASH-SEC-011",
+      "name": "Use full paths for system binaries in privileged scripts",
+      "severity": "warning",
+      "category": "Bash - Security",
+      "description": "In scripts running with elevated privileges, use full paths for system binaries (e.g. /bin/rm not rm) to prevent PATH manipulation attacks.",
+      "rationale": "An attacker with write access to a directory in PATH can place a malicious binary named 'rm' or 'cp' that runs before the system binary. Privileged scripts using relative names are vulnerable to this PATH hijacking."
+    },
+    {
+      "id": "BASH-SEC-012",
+      "name": "Do not ignore exit codes from critical commands",
+      "severity": "error",
+      "category": "Bash - Security",
+      "description": "Exit codes from critical commands (rm, cp, mv, ssh, scp, rsync, curl) must be checked. Do not use '|| true' to swallow failures from these commands.",
+      "rationale": "Silently ignoring failures from critical operations can leave the system in a partially deployed, inconsistent, or insecure state. Every failure should be handled explicitly with an informative error message."
+    },
+    {
+      "id": "JNK-ERR-001",
+      "name": "Pipeline must define a post block with failure handling",
+      "severity": "error",
+      "category": "Jenkinsfile - Error Handling",
+      "description": "Every pipeline must include a post block with at least a 'failure' or 'always' section to handle build failures.",
+      "rationale": "Without a post block, a failed build produces no notification, performs no cleanup, and leaves no trace of what happened beyond the console log. Post blocks ensure teams are notified and resources are cleaned up."
+    },
+    {
+      "id": "JNK-ERR-002",
+      "name": "Post block must include failure or unsuccessful handler",
+      "severity": "error",
+      "category": "Jenkinsfile - Error Handling",
+      "description": "The post block must contain a 'failure', 'unsuccessful', or 'always' section. An empty post block or one with only 'success' provides no error handling.",
+      "rationale": "A post block with only a 'success' handler is useless for error handling. The whole point of post blocks is to react to failures with notifications, cleanup, and rollback."
+    },
+    {
+      "id": "JNK-ERR-003",
+      "name": "Use retry for flaky external calls",
+      "severity": "warning",
+      "category": "Jenkinsfile - Error Handling",
+      "description": "Stages or steps that call external systems (deployments, API calls, Docker pushes) should wrap the call in retry() to handle transient failures.",
+      "rationale": "External systems are transiently unavailable (registry timeouts, API rate limits, network blips). Without retry, these cause build failures that require a full manual re-run. retry() makes pipelines resilient to transient failures."
+    },
+    {
+      "id": "JNK-ERR-004",
+      "name": "Wrap risky shell steps in try/catch within script blocks",
+      "severity": "warning",
+      "category": "Jenkinsfile - Error Handling",
+      "description": "Shell commands in script { } blocks that can fail for expected reasons must be wrapped in try/catch with explicit error handling.",
+      "rationale": "In scripted pipeline and script{} blocks, uncaught exceptions bubble up and fail the build with a stack trace. try/catch allows providing context, performing cleanup, and potentially continuing with a degraded state."
+    },
+    {
+      "id": "JNK-ERR-005",
+      "name": "Capture and archive test results",
+      "severity": "error",
+      "category": "Jenkinsfile - Error Handling",
+      "description": "Pipelines running tests must publish results with junit() or publishTestResults. Do not let test failures only appear in console output.",
+      "rationale": "Publishing test results with junit() gives Jenkins a structured view of failures, enables trend tracking, and allows developers to see exactly which tests failed without reading the full console log."
+    },
+    {
+      "id": "JNK-ERR-006",
+      "name": "Set build result explicitly on recoverable failures",
+      "severity": "warning",
+      "category": "Jenkinsfile - Error Handling",
+      "description": "When a stage failure should mark the build as UNSTABLE (not FAILED), set currentBuild.result = 'UNSTABLE' explicitly in the catch or post block.",
+      "rationale": "Differentiating UNSTABLE from FAILURE helps teams understand build quality. A build with flaky tests is UNSTABLE (warning); a build that cannot compile is FAILED. Using the right status prevents alert fatigue."
+    },
+    {
+      "id": "JNK-ERR-007",
+      "name": "Include deployment rollback stage on failure",
+      "severity": "warning",
+      "category": "Jenkinsfile - Error Handling",
+      "description": "Pipelines that deploy to production must include a rollback stage or post-failure handler that reverts the deployment if it fails.",
+      "rationale": "A failed production deployment without rollback leaves the application in a broken state until manual intervention. Automated rollback minimises the time to recovery."
+    },
+    {
+      "id": "JNK-ERR-008",
+      "name": "Pipeline must send notifications on failure",
+      "severity": "error",
+      "category": "Jenkinsfile - Error Handling",
+      "description": "The pipeline post/failure block must send a notification (email, Slack, Teams, or other) so the team is alerted to build failures.",
+      "rationale": "Without notifications, build failures are only visible to developers who happen to check the Jenkins UI. Automated notifications ensure the team is immediately aware of failures and can respond quickly."
+    },
+    {
+      "id": "JNK-HARD-001",
+      "name": "No hardcoded server addresses or hostnames",
+      "severity": "error",
+      "category": "Jenkinsfile - Hardcoding & Sensitive Data",
+      "description": "Server addresses, hostnames, and FQDNs must not be hardcoded in Jenkinsfile. Use pipeline parameters or Jenkins environment variables.",
+      "rationale": "Hardcoded server addresses make pipelines environment-specific and require code changes to point to different targets. They also expose internal infrastructure topology in source control."
+    },
+    {
+      "id": "JNK-HARD-002",
+      "name": "No hardcoded IP addresses in pipeline steps",
+      "severity": "error",
+      "category": "Jenkinsfile - Hardcoding & Sensitive Data",
+      "description": "IP addresses must not appear hardcoded inside sh, bat, or other step commands in Jenkinsfile.",
+      "rationale": "IP addresses embedded in pipeline steps are invisible to operators running the build — they cannot be overridden without editing the Jenkinsfile, committing, and rerunning."
+    },
+    {
+      "id": "JNK-HARD-003",
+      "name": "No hardcoded environment names in deployment commands",
+      "severity": "error",
+      "category": "Jenkinsfile - Hardcoding & Sensitive Data",
+      "description": "Environment names (prod, staging, dev, uat) in deployment commands must be pipeline parameters, not hardcoded strings.",
+      "rationale": "Hardcoded environment names mean a single Jenkinsfile can only deploy to one environment. Using parameters allows the same pipeline to promote through dev → staging → prod without code changes."
+    },
+    {
+      "id": "JNK-HARD-004",
+      "name": "No hardcoded version numbers in pipeline steps",
+      "severity": "warning",
+      "category": "Jenkinsfile - Hardcoding & Sensitive Data",
+      "description": "Application version numbers and build tags in pipeline steps must come from params, env, or computed values — not hardcoded strings.",
+      "rationale": "Hardcoded version numbers mean every release requires a Jenkinsfile edit. Versions should be computed from git tags, params.VERSION, or BUILD_NUMBER to enable automated release pipelines."
+    },
+    {
+      "id": "JNK-HARD-005",
+      "name": "No hardcoded Docker registry URLs",
+      "severity": "error",
+      "category": "Jenkinsfile - Hardcoding & Sensitive Data",
+      "description": "Docker registry URLs must not be hardcoded in pipeline steps. Use environment variables declared in the environment block.",
+      "rationale": "Registry URLs differ between environments (internal registry for dev, production registry for prod). Parameterising them allows the same pipeline to push to different registries for different environments."
+    },
+    {
+      "id": "JNK-HARD-006",
+      "name": "No hardcoded Kubernetes namespace or cluster names",
+      "severity": "error",
+      "category": "Jenkinsfile - Hardcoding & Sensitive Data",
+      "description": "Kubernetes namespace names and cluster context names must not be hardcoded in kubectl or helm commands.",
+      "rationale": "Namespace and cluster names differ between environments. Parameterising them allows a single pipeline to deploy to dev, staging, and production clusters without modification."
+    },
+    {
+      "id": "JNK-HARD-007",
+      "name": "Do not echo credential values in pipeline steps",
+      "severity": "critical",
+      "category": "Jenkinsfile - Hardcoding & Sensitive Data",
+      "description": "Pipeline steps must not echo, print, or write the values of credentials to console output. Jenkins masks credentials, but explicit echoing bypasses masking.",
+      "rationale": "Jenkins credential masking works when credentials are injected via withCredentials(). Explicitly printing a credential value in an echo or printf bypasses masking and exposes the value in build logs permanently."
+    },
+    {
+      "id": "JNK-HARD-008",
+      "name": "No hardcoded email recipients in notification steps",
+      "severity": "warning",
+      "category": "Jenkinsfile - Hardcoding & Sensitive Data",
+      "description": "Email recipients and Slack channels in notification steps must use environment variables or parameters, not hardcoded addresses.",
+      "rationale": "Notification recipients differ between environments and change over time. Hardcoded addresses cannot be changed without modifying the Jenkinsfile, and they expose internal contact details in source control."
+    },
+    {
+      "id": "JNK-IDEM-001",
+      "name": "Clean workspace before build",
+      "severity": "error",
+      "category": "Jenkinsfile - Idempotency",
+      "description": "Pipelines must clean the workspace at the start (cleanWs() in post or deleteDir()) to prevent stale artifacts from previous runs affecting current builds.",
+      "rationale": "Leftover artifacts, compiled outputs, or config files from previous runs can cause builds to pass when they should fail (using a cached artifact) or fail when they should pass (stale lock files, corrupt caches)."
+    },
+    {
+      "id": "JNK-IDEM-002",
+      "name": "Use stash/unstash instead of relying on workspace persistence",
+      "severity": "warning",
+      "category": "Jenkinsfile - Idempotency",
+      "description": "Artifacts passed between stages on different agents must use stash/unstash, not assume workspace persistence.",
+      "rationale": "When stages run on different agents, the workspace is not shared. Assuming the file exists because a previous stage created it causes intermittent failures that are environment-dependent and hard to reproduce."
+    },
+    {
+      "id": "JNK-IDEM-003",
+      "name": "Pin dependency versions in pipeline tools",
+      "severity": "error",
+      "category": "Jenkinsfile - Idempotency",
+      "description": "Tool versions declared in the tools block must use specific pinned versions, not aliases like 'default' or 'latest'.",
+      "rationale": "Using 'default' or unpinned tool versions means the build uses whatever version is currently set as default on the Jenkins master. This changes without notice and breaks reproducibility."
+    },
+    {
+      "id": "JNK-IDEM-004",
+      "name": "Avoid writing to workspace root without cleanup",
+      "severity": "warning",
+      "category": "Jenkinsfile - Idempotency",
+      "description": "Files written to the workspace during a build that are not stashed or archived must be cleaned up. Do not leave build outputs in the workspace between runs.",
+      "rationale": "Workspace files that are not cleaned up persist across runs. On the next run, a stage may find the file already present and skip creation, or use stale data, leading to non-deterministic builds."
+    },
+    {
+      "id": "JNK-IDEM-005",
+      "name": "Use when conditions for environment-specific stages",
+      "severity": "error",
+      "category": "Jenkinsfile - Idempotency",
+      "description": "Stages that only apply to specific branches or environments must use 'when' conditions to skip safely when not applicable, rather than failing or requiring manual intervention.",
+      "rationale": "Without 'when' conditions, deployment stages run on every branch including feature branches, potentially deploying unreviewed code to production or staging environments."
+    },
+    {
+      "id": "JNK-IDEM-006",
+      "name": "Parameterise environment names instead of hardcoding",
+      "severity": "error",
+      "category": "Jenkinsfile - Idempotency",
+      "description": "Environment names, server addresses, and deployment targets must be pipeline parameters or environment variables, not hardcoded strings in stage steps.",
+      "rationale": "Hardcoded environment names mean the Jenkinsfile must be edited to deploy to a different target. Parameterising allows the same pipeline to be reused for multiple environments without code changes."
+    },
+    {
+      "id": "JNK-LINT-001",
+      "name": "Use declarative pipeline syntax",
+      "severity": "warning",
+      "category": "Jenkinsfile - Linting & Style",
+      "description": "Prefer declarative pipeline syntax (pipeline { }) over scripted syntax (node { }) for new pipelines.",
+      "rationale": "Declarative syntax enforces a consistent structure, supports built-in validation, integrates with Blue Ocean and pipeline visualization, and is easier to read and maintain than scripted pipelines."
+    },
+    {
+      "id": "JNK-LINT-002",
+      "name": "Every pipeline must declare an agent",
+      "severity": "error",
+      "category": "Jenkinsfile - Linting & Style",
+      "description": "Every declarative pipeline must have a top-level 'agent' directive defining where the pipeline runs.",
+      "rationale": "Without an agent declaration, Jenkins cannot determine where to allocate the pipeline executor, causing the build to fail or run on an unpredictable node."
+    },
+    {
+      "id": "JNK-LINT-003",
+      "name": "Avoid agent any in production pipelines",
+      "severity": "warning",
+      "category": "Jenkinsfile - Linting & Style",
+      "description": "Production pipelines must use a specific agent label rather than 'agent any'. Reserve 'agent any' for testing pipelines only.",
+      "rationale": "agent any runs on any available node, which may have different tools, OS versions, or configurations. Production builds must run on consistently configured nodes to ensure reproducible results."
+    },
+    {
+      "id": "JNK-LINT-004",
+      "name": "All stages must have descriptive names",
+      "severity": "error",
+      "category": "Jenkinsfile - Linting & Style",
+      "description": "Every stage must have a meaningful, descriptive name that describes the work being done. Avoid generic names like 'Stage 1', 'Step', 'Test'.",
+      "rationale": "Stage names appear in Jenkins UI, Blue Ocean, and build notifications. Generic names make it impossible to understand pipeline progress at a glance or identify which stage a failure occurred in."
+    },
+    {
+      "id": "JNK-LINT-005",
+      "name": "Pipeline must define timeout in options",
+      "severity": "error",
+      "category": "Jenkinsfile - Linting & Style",
+      "description": "Every pipeline must include a global timeout in the options block to prevent hung builds from consuming executor resources indefinitely.",
+      "rationale": "Without a timeout, a hung build (e.g. waiting for user input, stuck process, network issue) blocks the executor forever. Always define a maximum reasonable duration with timeout() in options."
+    },
+    {
+      "id": "JNK-LINT-006",
+      "name": "Pipeline must configure build discarder",
+      "severity": "warning",
+      "category": "Jenkinsfile - Linting & Style",
+      "description": "Use buildDiscarder in options to limit the number of stored builds and prevent disk exhaustion on the Jenkins master.",
+      "rationale": "Without build discarder, Jenkins retains all build artifacts and logs forever. On active pipelines this eventually exhausts disk space on the controller, causing all builds to fail."
+    },
+    {
+      "id": "JNK-LINT-007",
+      "name": "Use environment block for environment variables",
+      "severity": "warning",
+      "category": "Jenkinsfile - Linting & Style",
+      "description": "Environment variables used across multiple stages must be declared in the pipeline-level environment block, not hardcoded inline in each stage.",
+      "rationale": "Declaring variables in the environment block makes them discoverable, centrally managed, and avoids repeating the same value in multiple stages where they can drift out of sync."
+    },
+    {
+      "id": "JNK-LINT-008",
+      "name": "Each stage should have a single responsibility",
+      "severity": "info",
+      "category": "Jenkinsfile - Linting & Style",
+      "description": "Stages should be focused on a single responsibility. Avoid combining unrelated steps (e.g. build + deploy) into one stage.",
+      "rationale": "Single-responsibility stages make pipelines easier to understand, allow parallel execution, give clearer failure attribution in build reports, and can be individually retried."
+    },
+    {
+      "id": "JNK-LINT-009",
+      "name": "Use skipDefaultCheckout when doing custom checkout",
+      "severity": "info",
+      "category": "Jenkinsfile - Linting & Style",
+      "description": "If performing a custom checkout inside a stage, use skipDefaultCheckout() in options to prevent Jenkins doing a redundant default checkout.",
+      "rationale": "Without skipDefaultCheckout, Jenkins performs a default SCM checkout on every agent before your pipeline steps run. If you are doing a custom checkout, the default checkout wastes time and can conflict."
+    },
+    {
+      "id": "JNK-LINT-010",
+      "name": "Avoid long inline shell scripts in Jenkinsfile",
+      "severity": "warning",
+      "category": "Jenkinsfile - Linting & Style",
+      "description": "Shell commands in Jenkinsfile steps should not exceed 5 lines. Extract complex logic to versioned shell scripts or Makefiles.",
+      "rationale": "Long inline shell in Jenkinsfile cannot be unit tested, version-controlled independently, or reused outside Jenkins. Complex logic belongs in dedicated scripts that developers can test locally."
+    },
+    {
+      "id": "JNK-SEC-001",
+      "name": "No hardcoded credentials in Jenkinsfile",
+      "severity": "critical",
+      "category": "Jenkinsfile - Security",
+      "description": "Passwords, tokens, API keys, and secrets must never be hardcoded in Jenkinsfile. Use Jenkins Credentials Store with credentials() binding.",
+      "rationale": "Jenkinsfiles are stored in source control and visible to everyone with repo access. Hardcoded credentials are exposed to all developers, auditors, and anyone who can read the repository — including after rotation."
+    },
+    {
+      "id": "JNK-SEC-002",
+      "name": "Use withCredentials for credential injection",
+      "severity": "error",
+      "category": "Jenkinsfile - Security",
+      "description": "All credential values must be injected via withCredentials() block. Never pass credentials as environment variable strings.",
+      "rationale": "withCredentials() masks credential values in logs automatically. Direct string injection appears in console output, build logs, and Blue Ocean — visible to anyone with read access to the build."
+    },
+    {
+      "id": "JNK-SEC-003",
+      "name": "Do not use JENKINS_URL or BUILD_URL in shell commands unsanitised",
+      "severity": "warning",
+      "category": "Jenkinsfile - Security",
+      "description": "Jenkins built-in variables (BUILD_URL, JOB_NAME, BRANCH_NAME) used inside sh steps must be treated as untrusted input and not interpolated directly into shell commands.",
+      "rationale": "Jenkins environment variable values can be influenced by branch names, PR titles, or external triggers. Interpolating them unsanitised into shell commands creates potential injection vulnerabilities."
+    },
+    {
+      "id": "JNK-SEC-004",
+      "name": "Production deployments require manual approval",
+      "severity": "error",
+      "category": "Jenkinsfile - Security",
+      "description": "Any stage that deploys to production must include an input step requiring manual approval before execution.",
+      "rationale": "Automated deployment to production without a human gate is a significant operational risk. An input step creates an audit trail of who approved each production deployment."
+    },
+    {
+      "id": "JNK-SEC-005",
+      "name": "Use specific Docker image tags, not latest",
+      "severity": "error",
+      "category": "Jenkinsfile - Security",
+      "description": "Docker image references in pipeline agent or step directives must use specific version tags, never 'latest' or no tag.",
+      "rationale": "Using 'latest' means the image can change between builds, making them non-reproducible. A new 'latest' could introduce breaking changes, vulnerabilities, or different tooling versions silently."
+    },
+    {
+      "id": "JNK-SEC-006",
+      "name": "Do not run pipeline as root in Docker agents",
+      "severity": "error",
+      "category": "Jenkinsfile - Security",
+      "description": "Docker agent containers must not run as root. Use the reuseNode setting with a non-root user or specify args with --user.",
+      "rationale": "Running build processes as root inside a container means any compromised build step has root-equivalent access to the container filesystem. Always use a non-root user for build agents."
+    },
+    {
+      "id": "JNK-SEC-007",
+      "name": "Avoid using script block to bypass declarative constraints",
+      "severity": "warning",
+      "category": "Jenkinsfile - Security",
+      "description": "Minimise the use of script { } blocks in declarative pipelines. Logic in script blocks bypasses pipeline syntax validation and is harder to audit.",
+      "rationale": "script { } blocks allow arbitrary Groovy code that bypasses declarative validation, In-process script approval, and makes the pipeline harder to audit for security issues. Prefer declarative steps where possible."
+    },
+    {
+      "id": "JNK-SEC-008",
+      "name": "Pipeline must not disable concurrent build protection without explicit reason",
+      "severity": "warning",
+      "category": "Jenkinsfile - Security",
+      "description": "If disableConcurrentBuilds() is not set, document why concurrent runs are safe. Concurrent pipeline runs sharing resources can cause race conditions.",
+      "rationale": "Concurrent pipeline runs sharing workspaces, files, or external resources cause race conditions and data corruption. Use disableConcurrentBuilds() or ensure stages are truly concurrent-safe."
+    },
+    {
+      "id": "PS-ERR-001",
+      "name": "Set $ErrorActionPreference to Stop at script top",
+      "severity": "error",
+      "category": "PowerShell - Error Handling",
+      "description": "Scripts must set \\$ErrorActionPreference = 'Stop' near the top so that non-terminating errors become terminating errors caught by try/catch.",
+      "rationale": "PowerShell's default ErrorActionPreference is 'Continue', meaning cmdlet errors are printed but do not stop execution. Scripts can run to completion while silently failing dozens of operations. Setting 'Stop' ensures every error is treated as a breaking failure."
+    },
+    {
+      "id": "PS-ERR-002",
+      "name": "Wrap all external calls in try/catch blocks",
+      "severity": "error",
+      "category": "PowerShell - Error Handling",
+      "description": "All cmdlet calls and external program invocations that can fail must be wrapped in try/catch blocks with meaningful error handling in the catch.",
+      "rationale": "Without try/catch, errors terminate the script with no cleanup, no context, and no actionable message. Structured error handling allows logging the error with context, performing rollback, and exiting with a specific code."
+    },
+    {
+      "id": "PS-ERR-003",
+      "name": "Catch blocks must not be empty",
+      "severity": "critical",
+      "category": "PowerShell - Error Handling",
+      "description": "catch {} blocks must not be empty. They must contain at minimum an error log and an exit or throw.",
+      "rationale": "An empty catch block silently swallows the error — this is the PowerShell equivalent of ignoring the error entirely but with the false impression that it is 'handled'. This is one of the most dangerous patterns in automation scripts."
+    },
+    {
+      "id": "PS-ERR-004",
+      "name": "Scripts must exit with non-zero code on failure",
+      "severity": "error",
+      "category": "PowerShell - Error Handling",
+      "description": "Scripts that encounter a fatal error must exit with a non-zero exit code using 'exit 1' (or a specific non-zero value). Do not let scripts exit with 0 after an error.",
+      "rationale": "CI/CD systems, Jenkins, and calling scripts use the exit code to determine success or failure. A script that exits 0 after an error tells the caller everything succeeded, preventing any failure gating from working."
+    },
+    {
+      "id": "PS-ERR-005",
+      "name": "Use finally for resource cleanup",
+      "severity": "warning",
+      "category": "PowerShell - Error Handling",
+      "description": "Scripts that acquire resources (open files, connections, temp files) must use a finally block to guarantee cleanup runs regardless of success or failure.",
+      "rationale": "Without finally, a script that throws an exception skips cleanup code placed after the try/catch. finally always runs, ensuring resources like temp files, open handles, and remote sessions are released even when errors occur."
+    },
+    {
+      "id": "PS-ERR-006",
+      "name": "Validate mandatory parameters before processing",
+      "severity": "error",
+      "category": "PowerShell - Error Handling",
+      "description": "Scripts and functions must validate parameter values at the start using ValidateNotNullOrEmpty, ValidateSet, or explicit if checks before any operations are performed.",
+      "rationale": "Discovering an invalid parameter value halfway through a script leaves the system in a partially-modified state. Fail fast with a clear error message before making any changes."
+    },
+    {
+      "id": "PS-ERR-007",
+      "name": "Log errors with full context using Write-Error or structured logging",
+      "severity": "warning",
+      "category": "PowerShell - Error Handling",
+      "description": "Error messages in catch blocks must include the exception message (\\$_), the operation that failed, and any relevant context variables.",
+      "rationale": "A catch block that only logs 'An error occurred' is useless for diagnosis. Including the exception object (\\$_), the operation being attempted, and relevant variable values makes log messages immediately actionable."
+    },
+    {
+      "id": "PS-ERR-008",
+      "name": "Do not use -ErrorAction SilentlyContinue on critical operations",
+      "severity": "error",
+      "category": "PowerShell - Error Handling",
+      "description": "Do not use -ErrorAction SilentlyContinue on operations that are critical to script success (Copy-Item, Invoke-Command, Start-Service, Invoke-RestMethod).",
+      "rationale": "SilentlyContinue suppresses both the error message and the failure, making it completely invisible. Using it on critical operations means failures never surface and the script appears to have succeeded."
+    },
+    {
+      "id": "PS-ERR-009",
+      "name": "Use Verbose logging for key milestones",
+      "severity": "info",
+      "category": "PowerShell - Error Handling",
+      "description": "Scripts should use Write-Verbose to log key milestones, making script execution traceable when -Verbose is passed by operators.",
+      "rationale": "Without verbose logging, it is impossible to trace where a long-running script is in its execution. Write-Verbose messages are suppressed in normal runs but visible with -Verbose, giving operators insight without log noise."
+    },
+    {
+      "id": "PS-ERR-010",
+      "name": "Remote calls must handle connection failures explicitly",
+      "severity": "error",
+      "category": "PowerShell - Error Handling",
+      "description": "Invoke-Command, Enter-PSSession, and other remote calls must explicitly handle connection failures with a try/catch, not just rely on $ErrorActionPreference.",
+      "rationale": "Remote connectivity failures produce different error types than standard cmdlet errors. Explicit handling allows the script to retry, report the specific unreachable host, or gracefully skip the host in a multi-host loop."
+    },
+    {
+      "id": "PS-ERR-011",
+      "name": "Use -Confirm:$false with non-interactive destructive operations",
+      "severity": "warning",
+      "category": "PowerShell - Error Handling",
+      "description": "Destructive operations in automated scripts must use -Confirm:\\$false to prevent prompting for user input, which would hang the script indefinitely in CI/CD.",
+      "rationale": "In non-interactive automation contexts, a cmdlet that prompts for confirmation causes the script to hang indefinitely waiting for user input. Always pass -Confirm:\\$false for destructive operations in automated scripts."
+    },
+    {
+      "id": "PS-HARD-001",
+      "name": "No hardcoded IP addresses",
+      "severity": "error",
+      "category": "PowerShell - Hardcoding & Sensitive Data",
+      "description": "IP addresses must not be hardcoded in PowerShell scripts. Use parameters or environment variables.",
+      "rationale": "Hardcoded IP addresses make scripts environment-specific, break when infrastructure changes, and expose internal network topology in source control."
+    },
+    {
+      "id": "PS-HARD-002",
+      "name": "No hardcoded connection strings",
+      "severity": "critical",
+      "category": "PowerShell - Hardcoding & Sensitive Data",
+      "description": "Database connection strings must not be hardcoded. Use environment variables or retrieve from a secrets manager.",
+      "rationale": "Connection strings contain server addresses, database names, and often credentials. Hardcoding them exposes all of this information in source control and makes environment-specific deployment impossible without code changes."
+    },
+    {
+      "id": "PS-HARD-003",
+      "name": "No hardcoded server names or FQDNs",
+      "severity": "error",
+      "category": "PowerShell - Hardcoding & Sensitive Data",
+      "description": "Server names, FQDNs, and computer names must not be hardcoded in scripts. Use parameters with validation.",
+      "rationale": "Server names differ between environments and change when infrastructure is rebuilt. Parameters with ValidatePattern allow the caller to supply the correct value for each environment."
+    },
+    {
+      "id": "PS-HARD-004",
+      "name": "No hardcoded port numbers",
+      "severity": "warning",
+      "category": "PowerShell - Hardcoding & Sensitive Data",
+      "description": "Port numbers must not be hardcoded inline. Define them as named variables or parameters at the top of the script.",
+      "rationale": "Port numbers change during security hardening and between environments. Named variables centralise port definitions and make them overridable without editing the script body."
+    },
+    {
+      "id": "PS-HARD-005",
+      "name": "No hardcoded Windows usernames or domain accounts",
+      "severity": "error",
+      "category": "PowerShell - Hardcoding & Sensitive Data",
+      "description": "Windows usernames, domain accounts, and service account names must not be hardcoded. Use parameters or environment variables.",
+      "rationale": "Account names differ between environments and organisations. Hardcoding domain accounts creates undocumented dependencies on specific account names existing in Active Directory."
+    },
+    {
+      "id": "PS-HARD-006",
+      "name": "No hardcoded file paths",
+      "severity": "warning",
+      "category": "PowerShell - Hardcoding & Sensitive Data",
+      "description": "Base deployment paths, application directories, and log paths must use variables, not hardcoded strings.",
+      "rationale": "Paths differ between servers and environments. Hardcoded paths prevent script reuse, cause failures on servers with different drive mappings, and require code changes for each environment."
+    },
+    {
+      "id": "PS-HARD-007",
+      "name": "No hardcoded credentials or secrets",
+      "severity": "critical",
+      "category": "PowerShell - Hardcoding & Sensitive Data",
+      "description": "Passwords, API keys, tokens, and secrets must never appear as hardcoded string values in variable assignments.",
+      "rationale": "Hardcoded secrets in scripts are committed to version control, visible in process memory, appear in CI/CD logs, and are accessible to anyone who can read the script. Always retrieve from a secrets manager."
+    },
+    {
+      "id": "PS-HARD-008",
+      "name": "Do not log sensitive variable values",
+      "severity": "error",
+      "category": "PowerShell - Hardcoding & Sensitive Data",
+      "description": "Write-Host, Write-Verbose, Write-Output, and Out-File must not print or write values of sensitive variables.",
+      "rationale": "Output written by PowerShell scripts appears in Jenkins/AAP logs, Windows Event Log, and application logs. Credential values written there persist long-term and are accessible to log administrators."
+    },
+    {
+      "id": "PS-HARD-009",
+      "name": "No hardcoded Azure/AWS resource IDs",
+      "severity": "critical",
+      "category": "PowerShell - Hardcoding & Sensitive Data",
+      "description": "Azure subscription IDs, tenant IDs, AWS account IDs, and cloud resource identifiers must not be hardcoded.",
+      "rationale": "Cloud resource IDs are environment-specific (dev/staging/prod use different subscriptions) and sensitive. They expose your cloud account structure and must be supplied as parameters."
+    },
+    {
+      "id": "PS-HARD-010",
+      "name": "No hardcoded email addresses or distribution lists",
+      "severity": "warning",
+      "category": "PowerShell - Hardcoding & Sensitive Data",
+      "description": "Email addresses and distribution lists used in Send-MailMessage or notification cmdlets must use variables, not hardcoded strings.",
+      "rationale": "Email addresses change and differ between environments (use a dev alias in dev, oncall in prod). Hardcoded addresses send production alerts to the wrong team or expose internal contact information."
+    },
+    {
+      "id": "PS-IDEM-001",
+      "name": "Test before creating directories",
+      "severity": "error",
+      "category": "PowerShell - Idempotency",
+      "description": "Before creating a directory with New-Item -ItemType Directory, check whether it already exists using Test-Path.",
+      "rationale": "New-Item fails with an error if the directory already exists (unless -Force is used). Without a guard, re-runs break. Use Test-Path first or New-Item with -Force to make the operation idempotent."
+    },
+    {
+      "id": "PS-IDEM-002",
+      "name": "Test before writing files",
+      "severity": "warning",
+      "category": "PowerShell - Idempotency",
+      "description": "Before writing content to a file with Set-Content or Out-File, check whether the file already contains the expected content.",
+      "rationale": "Unconditionally writing files on every run changes the file's modification timestamp, triggers change detection in monitoring tools, and restarts services watching those files unnecessarily."
+    },
+    {
+      "id": "PS-IDEM-003",
+      "name": "Test before adding registry entries",
+      "severity": "error",
+      "category": "PowerShell - Idempotency",
+      "description": "Before creating registry keys or values, check their existence with Test-Path or Get-ItemProperty. Never write registry entries unconditionally.",
+      "rationale": "Writing registry entries without checking their current value overwrites existing configurations on every run. This can overwrite values that were deliberately changed by administrators post-deployment."
+    },
+    {
+      "id": "PS-IDEM-004",
+      "name": "Check service state before starting or stopping",
+      "severity": "error",
+      "category": "PowerShell - Idempotency",
+      "description": "Before starting or stopping a Windows service, check its current status with Get-Service. Avoid unconditional Start-Service or Stop-Service calls.",
+      "rationale": "Calling Start-Service on an already-running service or Stop-Service on a stopped service generates warnings and may cause errors that abort the script. Always check current status first."
+    },
+    {
+      "id": "PS-IDEM-005",
+      "name": "Check before installing Windows features or roles",
+      "severity": "error",
+      "category": "PowerShell - Idempotency",
+      "description": "Before calling Install-WindowsFeature or Enable-WindowsOptionalFeature, check whether the feature is already installed.",
+      "rationale": "Installing a feature that is already installed is slow and may require a restart even when nothing changed. Always check the installation state first to make the script safe to re-run without side effects."
+    },
+    {
+      "id": "PS-IDEM-006",
+      "name": "Check before creating scheduled tasks",
+      "severity": "error",
+      "category": "PowerShell - Idempotency",
+      "description": "Before registering a scheduled task with Register-ScheduledTask, check if it already exists using Get-ScheduledTask.",
+      "rationale": "Register-ScheduledTask fails if the task already exists. Without a guard, re-runs abort at this point. Check first and use -Force or unregister/re-register only when the definition has changed."
+    },
+    {
+      "id": "PS-IDEM-007",
+      "name": "Check before adding hosts file entries",
+      "severity": "warning",
+      "category": "PowerShell - Idempotency",
+      "description": "Before appending entries to the hosts file or other system config files, check whether the entry already exists.",
+      "rationale": "Appending without checking creates duplicate entries on every re-run. Duplicate hosts file entries can cause DNS resolution issues and are a sign of non-idempotent automation."
+    },
+    {
+      "id": "PS-IDEM-008",
+      "name": "Check before creating local users or groups",
+      "severity": "error",
+      "category": "PowerShell - Idempotency",
+      "description": "Before creating local users with New-LocalUser or groups with New-LocalGroup, check if they already exist.",
+      "rationale": "New-LocalUser and New-LocalGroup throw terminating errors if the account already exists. Without guards, re-running fails immediately and skips all subsequent steps."
+    },
+    {
+      "id": "PS-IDEM-009",
+      "name": "Check before installing software packages",
+      "severity": "error",
+      "category": "PowerShell - Idempotency",
+      "description": "Before installing software with Install-Package, winget, or choco, check whether the package is already installed.",
+      "rationale": "Installing a package that is already installed wastes time, requires network access, and can trigger unnecessary reboots. Always check the installed state before attempting installation."
+    },
+    {
+      "id": "PS-IDEM-010",
+      "name": "Use -WhatIf support to make destructive operations safely testable",
+      "severity": "warning",
+      "category": "PowerShell - Idempotency",
+      "description": "Functions performing destructive or state-changing operations must support SupportsShouldProcess so callers can use -WhatIf to simulate without applying changes.",
+      "rationale": "SupportsShouldProcess with -WhatIf allows operators to preview exactly what the script will do before running it for real. This is essential for idempotency testing: operators can verify expected state changes on first run without side effects."
+    },
+    {
+      "id": "PS-LINT-001",
+      "name": "Functions must use approved PowerShell verbs",
+      "severity": "error",
+      "category": "PowerShell - Linting & Style",
+      "description": "Function names must follow the Verb-Noun pattern using only approved PowerShell verbs (Get, Set, New, Remove, Start, Stop, Invoke, Test, Add, etc.).",
+      "rationale": "Using non-approved verbs triggers warnings when importing modules, breaks discoverability, and violates PowerShell naming conventions enforced by PSScriptAnalyzer and the PowerShell Gallery."
+    },
+    {
+      "id": "PS-LINT-002",
+      "name": "Scripts and functions must use CmdletBinding",
+      "severity": "warning",
+      "category": "PowerShell - Linting & Style",
+      "description": "Functions intended as cmdlets must include [CmdletBinding()] attribute to support -Verbose, -Debug, -WhatIf, and -ErrorAction.",
+      "rationale": "Without [CmdletBinding()], functions cannot support common parameters like -Verbose, -ErrorAction, or -WhatIf. These are essential for production automation scripts to behave predictably."
+    },
+    {
+      "id": "PS-LINT-003",
+      "name": "Parameters must be declared with types and attributes",
+      "severity": "warning",
+      "category": "PowerShell - Linting & Style",
+      "description": "All function parameters must be explicitly typed and use Parameter() attribute with Mandatory where appropriate.",
+      "rationale": "Untyped parameters accept any input without validation. Explicit types and Parameter() attributes provide input validation, improve IntelliSense, and make the function interface self-documenting."
+    },
+    {
+      "id": "PS-LINT-004",
+      "name": "Use Write-Verbose and Write-Warning, not Write-Host for logging",
+      "severity": "warning",
+      "category": "PowerShell - Linting & Style",
+      "description": "Use Write-Verbose, Write-Warning, and Write-Error for output instead of Write-Host in reusable functions.",
+      "rationale": "Write-Host writes directly to the console and cannot be captured, redirected, or suppressed. Write-Verbose can be toggled with -Verbose, making scripts usable in both interactive and automated contexts."
+    },
+    {
+      "id": "PS-LINT-005",
+      "name": "Use single quotes for literal strings",
+      "severity": "info",
+      "category": "PowerShell - Linting & Style",
+      "description": "Use single quotes for strings that do not require variable expansion or escape sequences. Reserve double quotes for strings requiring interpolation.",
+      "rationale": "Single-quoted strings are literal — no variable expansion occurs, preventing accidental interpolation. Using them where possible makes intent clear and avoids subtle bugs from unexpected expansion."
+    },
+    {
+      "id": "PS-LINT-006",
+      "name": "Always specify ErrorAction on critical commands",
+      "severity": "warning",
+      "category": "PowerShell - Linting & Style",
+      "description": "Critical cmdlets must specify -ErrorAction Stop to ensure errors throw exceptions that can be caught with try/catch.",
+      "rationale": "Without -ErrorAction Stop, non-terminating errors in cmdlets do not trigger catch blocks in try/catch. This means errors can be silently swallowed, leaving the script in an unknown state."
+    },
+    {
+      "id": "PS-LINT-007",
+      "name": "Use try/catch/finally for error handling",
+      "severity": "error",
+      "category": "PowerShell - Linting & Style",
+      "description": "Scripts that invoke external commands or cmdlets must use try/catch blocks rather than relying on $ErrorActionPreference alone.",
+      "rationale": "Structured error handling with try/catch provides clean error messages, proper logging, and controlled cleanup. Relying on $ErrorActionPreference alone gives no opportunity to provide context or remediation steps."
+    },
+    {
+      "id": "PS-LINT-008",
+      "name": "Scripts must not exceed 200 lines",
+      "severity": "warning",
+      "category": "PowerShell - Linting & Style",
+      "description": "PowerShell scripts longer than 200 lines should be refactored into modules or smaller script files.",
+      "rationale": "Long scripts are difficult to test, debug, and maintain. Complex logic should be broken into functions in a module (.psm1), making code reusable and individually testable with Pester."
+    },
+    {
+      "id": "PS-LINT-009",
+      "name": "Use approved output objects not formatted strings",
+      "severity": "info",
+      "category": "PowerShell - Linting & Style",
+      "description": "Functions should output objects (PSCustomObject, hashtables) rather than pre-formatted strings, to allow callers to process the data.",
+      "rationale": "Returning structured objects allows callers to filter, sort, and format output as needed. Returning pre-formatted strings breaks pipelining and makes the function unusable in automated pipelines."
+    },
+    {
+      "id": "PS-LINT-010",
+      "name": "Always provide comment-based help for public functions",
+      "severity": "info",
+      "category": "PowerShell - Linting & Style",
+      "description": "Public functions (those not prefixed with a private naming convention) must include comment-based help with .SYNOPSIS and .PARAMETER sections.",
+      "rationale": "Comment-based help is surfaced by Get-Help, providing discoverability for your team. Without it, developers must read the code to understand what a function does and what parameters it accepts."
+    },
+    {
+      "id": "PS-LINT-011",
+      "name": "Line length must not exceed 120 characters",
+      "severity": "warning",
+      "category": "PowerShell - Linting & Style",
+      "description": "Lines must not exceed 120 characters. Use splatting or line continuation for long commands.",
+      "rationale": "Long lines are difficult to read in code reviews, terminals, and side-by-side diffs. PowerShell supports splatting (@params) and backtick line continuation for breaking up long commands."
+    },
+    {
+      "id": "PS-SEC-001",
+      "name": "No hardcoded passwords or credentials",
+      "severity": "critical",
+      "category": "PowerShell - Security",
+      "description": "Passwords, API keys, secrets, and credentials must never be hardcoded as plain strings. Use SecureString, Get-Secret (SecretManagement module), or environment variables.",
+      "rationale": "Hardcoded credentials are exposed to anyone who can read the script file, view source control history, or intercept logging output. Credential theft is the leading cause of infrastructure breaches."
+    },
+    {
+      "id": "PS-SEC-002",
+      "name": "Do not use ConvertTo-SecureString with plain text AsPlainText",
+      "severity": "error",
+      "category": "PowerShell - Security",
+      "description": "Do not use ConvertTo-SecureString -AsPlainText -Force with a hardcoded string. This converts a visible plaintext credential into a SecureString but the plaintext is still visible in the script.",
+      "rationale": "ConvertTo-SecureString -AsPlainText only protects the credential in memory; the source string is still hardcoded and visible. Retrieve the credential from a secret store instead."
+    },
+    {
+      "id": "PS-SEC-003",
+      "name": "Do not bypass execution policy",
+      "severity": "critical",
+      "category": "PowerShell - Security",
+      "description": "Scripts must not use -ExecutionPolicy Bypass or Set-ExecutionPolicy Bypass/Unrestricted. Use proper code signing instead.",
+      "rationale": "Bypassing execution policy removes the OS-level protection against running unsigned or untrusted scripts. In production environments, scripts should be signed with a trusted certificate, not have policy bypassed."
+    },
+    {
+      "id": "PS-SEC-004",
+      "name": "Enforce TLS 1.2 or higher for web requests",
+      "severity": "error",
+      "category": "PowerShell - Security",
+      "description": "Scripts making web requests must explicitly set [Net.ServicePointManager]::SecurityProtocol to Tls12 or Tls13 before web calls.",
+      "rationale": "PowerShell 5.1 defaults to TLS 1.0, which has known vulnerabilities. Failing to set the minimum protocol version means connections may negotiate a weak protocol, exposing data in transit."
+    },
+    {
+      "id": "PS-SEC-005",
+      "name": "Do not use Invoke-Expression with external or user input",
+      "severity": "critical",
+      "category": "PowerShell - Security",
+      "description": "Invoke-Expression (iex) must not be used with any string that includes variable content from external sources, user input, or network responses.",
+      "rationale": "Invoke-Expression executes an arbitrary string as PowerShell code — it is the PowerShell equivalent of eval. If any part of the string is attacker-controlled, it results in arbitrary code execution."
+    },
+    {
+      "id": "PS-SEC-006",
+      "name": "Do not download and execute from the internet",
+      "severity": "critical",
+      "category": "PowerShell - Security",
+      "description": "Do not download and immediately execute scripts or binaries from the internet using DownloadString, IEX, or piped execution patterns.",
+      "rationale": "Downloading and immediately executing code from the internet gives no opportunity to verify the content. This pattern is used in almost all PowerShell-based malware. Always download, verify hash, then execute."
+    },
+    {
+      "id": "PS-SEC-007",
+      "name": "Use PSCredential for credential handling, not plain strings",
+      "severity": "error",
+      "category": "PowerShell - Security",
+      "description": "Credentials passed to cmdlets must use [PSCredential] objects, not plain username/password string pairs.",
+      "rationale": "Plain string credentials are stored in memory as readable strings and may appear in logging output. PSCredential stores the password as a SecureString, limiting exposure in memory and log files."
+    },
+    {
+      "id": "PS-SEC-008",
+      "name": "Do not disable SSL certificate validation",
+      "severity": "critical",
+      "category": "PowerShell - Security",
+      "description": "Scripts must not disable SSL certificate validation via [Net.ServicePointManager]::ServerCertificateValidationCallback or -SkipCertificateCheck.",
+      "rationale": "Disabling certificate validation defeats TLS entirely, making all 'encrypted' connections trivially interceptable by anyone on the network path. This is a common shortcut that creates critical security vulnerabilities."
+    },
+    {
+      "id": "PS-SEC-009",
+      "name": "Sensitive data must not be written to verbose or debug output",
+      "severity": "error",
+      "category": "PowerShell - Security",
+      "description": "Passwords, tokens, keys, and secrets must not be passed to Write-Verbose, Write-Debug, or Write-Host where they would appear in logs.",
+      "rationale": "Verbose and debug output is often captured in CI/CD logs, SIEM systems, and audit logs. Credentials appearing there are effectively exposed to anyone with log access — often a much larger audience than intended."
+    },
+    {
+      "id": "PS-SEC-010",
+      "name": "Use -WhatIf for destructive operations in scripts",
+      "severity": "warning",
+      "category": "PowerShell - Security",
+      "description": "Functions that perform destructive operations (Remove-Item, Stop-Service, Format-Volume) should support -WhatIf via SupportsShouldProcess.",
+      "rationale": "SupportsShouldProcess enables -WhatIf mode, letting operators preview destructive changes before executing them. This is a critical safety feature for scripts run in production environments."
+    },
+    {
+      "id": "PS-SEC-011",
+      "name": "Do not use plain HTTP for web requests",
+      "severity": "error",
+      "category": "PowerShell - Security",
+      "description": "All web requests must use HTTPS. Plain HTTP transmits data in cleartext and must not be used for any API calls or file downloads.",
+      "rationale": "HTTP provides no encryption. Credentials, tokens, and data sent over HTTP are visible to anyone on the network path. All endpoints should be accessed via HTTPS only."
+    }
+  ]
+}</script>
+<script>
+const REPORT_DATA = JSON.parse(document.getElementById('report-data').textContent);
+
+const SEV_ORDER  = {critical:0,error:1,warning:2,info:3};
+const SEV_COLORS = {critical:'var(--c-crit)',error:'var(--c-err)',warning:'var(--c-warn)',info:'var(--c-info)'};
+const SEV_BG     = {
+  critical:'color-mix(in srgb,var(--c-crit) 12%,var(--surface2))',
+  error:   'color-mix(in srgb,var(--c-err) 10%,var(--surface2))',
+  warning: 'color-mix(in srgb,var(--c-warn) 8%,var(--surface2))',
+  info:    'color-mix(in srgb,var(--c-info) 8%,var(--surface2))',
+};
+const SEV_BORDER = {
+  critical:'color-mix(in srgb,var(--c-crit) 35%,transparent)',
+  error:   'color-mix(in srgb,var(--c-err) 30%,transparent)',
+  warning: 'color-mix(in srgb,var(--c-warn) 25%,transparent)',
+  info:    'color-mix(in srgb,var(--c-info) 25%,transparent)',
+};
+let currentFilter='all', currentSort={key:'severity',dir:1}, searchQuery='', activeFileIdx=null;
+
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+window.addEventListener('DOMContentLoaded',()=>{
+  const D=REPORT_DATA;
+  document.getElementById('hdr-target').textContent=D.target;
+  document.getElementById('hdr-ts').textContent=D.timestamp;
+  document.getElementById('hdr-rules').textContent=D.rules.length+' loaded';
+  document.getElementById('grade-ring').textContent=D.grade;
+  document.getElementById('grade-ring').style.setProperty('--grade-col',D.grade_color);
+  document.getElementById('grade-score').textContent=D.avg_score+'/100';
+  document.getElementById('grade-score').style.color=D.grade_color;
+  document.getElementById('grade-bar').style.width=D.avg_score+'%';
+  document.getElementById('stat-total').textContent=D.total_violations;
+  document.getElementById('stat-clean').textContent=D.files_clean;
+  document.getElementById('stat-crit').textContent=D.severity_totals.critical||0;
+  document.getElementById('stat-err').textContent=D.severity_totals.error||0;
+  document.getElementById('stat-warn').textContent=D.severity_totals.warning||0;
+  document.getElementById('stat-info').textContent=D.severity_totals.info||0;
+  buildSidebar();
+  buildIssueTable();
+  buildFilesView();
+  buildRulesTable();
+});
+
+function buildSidebar(){
+  const c=document.getElementById('sidebar-files');
+  c.innerHTML=REPORT_DATA.files.map((f,i)=>{
+    const col=f.score>=80?'var(--c-clean)':f.score>=60?'var(--c-warn)':'var(--c-crit)';
+    return `<div class="file-list-item" style="--dot-col:${col}" id="sfl-${i}" onclick="focusFile(${i})">
+      <div class="file-dot"></div>
+      <div class="file-list-name" title="${esc(f.path)}">${esc(f.name)}</div>
+      ${f.violations.length?`<div class="file-list-count">${f.violations.length}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function focusFile(idx){
+  document.querySelectorAll('.file-list-item').forEach(el=>el.classList.remove('active'));
+  const el=document.getElementById('sfl-'+idx);
+  if(el){el.classList.add('active');el.scrollIntoView({block:'nearest'});}
+  activeFileIdx=idx;
+  currentFilter='__file__'+idx;
+  document.querySelectorAll('.filter-chip').forEach(c=>c.classList.remove('active'));
+  switchView('issues');
+  renderIssueTable();
+}
+
+function getAllViolations(){
+  const all=[];
+  REPORT_DATA.files.forEach((f,fi)=>{
+    f.violations.forEach((v,vi)=>all.push({...v,_file:f.path,_fname:f.name,_fi:fi,_vi:vi}));
+  });
+  return all;
+}
+
+function getFilteredViolations(){
+  let viols=getAllViolations();
+  if(currentFilter.startsWith('__file__')){
+    const fi=parseInt(currentFilter.replace('__file__',''));
+    viols=viols.filter(v=>v._fi===fi);
+  } else if(currentFilter!=='all'){
+    viols=viols.filter(v=>v.severity===currentFilter);
+  }
+  if(searchQuery){
+    const q=searchQuery.toLowerCase();
+    viols=viols.filter(v=>
+      v.rule_id.toLowerCase().includes(q)||v.rule_name.toLowerCase().includes(q)||
+      v.description.toLowerCase().includes(q)||v.category.toLowerCase().includes(q)||
+      v._fname.toLowerCase().includes(q));
+  }
+  viols.sort((a,b)=>{
+    const k=currentSort.key;
+    let av=k==='severity'?SEV_ORDER[a.severity]??9:(a[k]||a['_'+k]||'');
+    let bv=k==='severity'?SEV_ORDER[b.severity]??9:(b[k]||b['_'+k]||'');
+    if(av<bv)return -currentSort.dir;
+    if(av>bv)return currentSort.dir;
+    return 0;
+  });
+  return viols;
+}
+
+function buildIssueTable(){renderIssueTable();}
+
+function renderIssueTable(){
+  const viols=getFilteredViolations();
+  const tbody=document.getElementById('issue-tbody');
+  const noIssues=document.getElementById('no-issues');
+  document.getElementById('issue-count-label').textContent=viols.length+' issue'+(viols.length!==1?'s':'');
+  if(!viols.length){tbody.innerHTML='';noIssues.style.display='block';return;}
+  noIssues.style.display='none';
+  tbody.innerHTML=viols.map((v,idx)=>{
+    const sc=SEV_COLORS[v.severity]||'var(--muted)';
+    const sb=SEV_BG[v.severity]||'var(--surface2)';
+    const sbo=SEV_BORDER[v.severity]||'var(--border)';
+    const lineDisp=v.line>0?v.line:'EOF';
+    return `
+    <tr class="issue-row" id="irow-${idx}" onclick="toggleDetail(${idx})">
+      <td><div class="sev-tag" style="--tag-color:${sc};--tag-bg:${sb};--tag-border:${sbo}">
+        <span class="sev-dot"></span>${v.severity.toUpperCase()}</div></td>
+      <td><span class="rule-id-tag">${esc(v.rule_id)}</span></td>
+      <td><div class="issue-name">${esc(v.rule_name)}</div><div class="issue-cat">${esc(v.category)}</div></td>
+      <td><div class="file-ref" title="${esc(v._file)}">${esc(v._fname)}<span class="line-badge">L${lineDisp}</span></div></td>
+      <td><span class="expand-icon">&#9660;</span></td>
+    </tr>
+    <tr class="detail-row" id="detail-${idx}"><td colspan="5">${buildDetailHTML(v)}</td></tr>`;
+  }).join('');
+}
+
+function buildDetailHTML(v){
+  const lineDisp=v.line>0?v.line:'EOF';
+  const lineContent=esc(v.line_content||'');
+  const badCode=esc(v.example_bad||'');
+  const goodCode=esc(v.example_good||'');
+  const hasCode=badCode||goodCode;
+  let html=`<div class="detail-inner">
+    <div class="detail-section">
+      <div class="detail-title">Description</div>
+      <div class="detail-text">${esc(v.description)}</div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-title">Why This Rule Exists</div>
+      <div class="rationale-box">${esc(v.rationale)||'<span style="color:var(--muted)">No rationale provided.</span>'}</div>
+    </div>`;
+  if(lineContent){
+    html+=`<div class="detail-section" style="grid-column:1/-1">
+      <div class="detail-title">Offending Line &middot; ${esc(v._fname||v._file)} &middot; Line ${lineDisp}</div>
+      <div class="offending-line"><span class="ln">${lineDisp}</span><code>${lineContent}</code></div>
+    </div>`;
+  }
+  if(hasCode){
+    html+=`<div class="code-wrap"><div class="detail-title" style="margin-bottom:10px">Code Fix Guide</div>
+    <div class="code-grid">`;
+    if(badCode){
+      html+=`<div class="code-block bad">
+        <div class="code-header">&#10007; &nbsp;Problematic Pattern
+          <button class="copy-btn" onclick="copyCode(this,event)">copy</button></div>
+        <div class="code-body"><pre>${badCode}</pre></div>
+      </div>`;
+    }
+    if(goodCode){
+      html+=`<div class="code-block good">
+        <div class="code-header">&#10003; &nbsp;Recommended Fix
+          <button class="copy-btn" onclick="copyCode(this,event)">copy</button></div>
+        <div class="code-body"><pre>${goodCode}</pre></div>
+      </div>`;
+    }
+    html+=`</div></div>`;
+  }
+  html+=`</div>`;
+  return html;
+}
+
+function toggleDetail(idx){
+  const row=document.getElementById('irow-'+idx);
+  const detail=document.getElementById('detail-'+idx);
+  const isOpen=detail.classList.contains('open');
+  document.querySelectorAll('.detail-row.open').forEach(r=>r.classList.remove('open'));
+  document.querySelectorAll('.issue-row.expanded').forEach(r=>r.classList.remove('expanded'));
+  if(!isOpen){detail.classList.add('open');row.classList.add('expanded');}
+}
+
+function copyCode(btn,e){
+  e.stopPropagation();
+  const pre=btn.closest('.code-block').querySelector('pre');
+  navigator.clipboard.writeText(pre.textContent).then(()=>{
+    btn.textContent='copied!';setTimeout(()=>btn.textContent='copy',1500);
+  });
+}
+
+function buildFilesView(){
+  const container=document.getElementById('files-container');
+  document.getElementById('file-count-label').textContent=REPORT_DATA.files.length+' files';
+  container.innerHTML=REPORT_DATA.files.map((f,fi)=>{
+    const score=f.score;
+    const ringCol=score>=80?'var(--c-clean)':score>=60?'var(--c-warn)':'var(--c-crit)';
+    const sev=f.by_severity||{};
+    const pills=['critical','error','warning','info'].filter(s=>sev[s]>0).map(s=>{
+      const col=SEV_COLORS[s];const bg=SEV_BG[s];const bo=SEV_BORDER[s];
+      return `<div class="file-sev-pill" style="--p-color:${col};--p-bg:${bg};--p-border:${bo}">${s[0].toUpperCase()}:${sev[s]}</div>`;
+    }).join('');
+    const rows=f.violations.map((v,vi)=>{
+      const sc=SEV_COLORS[v.severity]||'var(--muted)';
+      const sb=SEV_BG[v.severity];const sbo=SEV_BORDER[v.severity];
+      const lineDisp=v.line>0?v.line:'EOF';
+      const did=`fv-${fi}-${vi}`;
+      return `
+      <tr class="issue-row" id="frow-${did}" onclick="toggleFDetail('${did}')">
+        <td><div class="sev-tag" style="--tag-color:${sc};--tag-bg:${sb};--tag-border:${sbo}">
+          <span class="sev-dot"></span>${v.severity.toUpperCase()}</div></td>
+        <td><span class="rule-id-tag">${esc(v.rule_id)}</span></td>
+        <td><div class="issue-name">${esc(v.rule_name)}</div><div class="issue-cat">${esc(v.category)}</div></td>
+        <td><div class="file-ref"><span class="line-badge">L${lineDisp}</span></div></td>
+        <td><span class="expand-icon">&#9660;</span></td>
+      </tr>
+      <tr class="detail-row" id="fdetail-${did}">
+        <td colspan="5">${buildDetailHTML({...v,_fname:f.name,_file:f.path})}</td>
+      </tr>`;
+    }).join('');
+    return `
+    <div class="file-card-v2" id="fcard-${fi}">
+      <div class="file-card-header" onclick="toggleFileCard(${fi})">
+        <div class="file-score-ring" style="--ring-col:${ringCol}">${score}</div>
+        <div class="file-info">
+          <div class="file-name-v2">${esc(f.name)}</div>
+          <div class="file-path-v2">${esc(f.path)}</div>
+          <div class="file-sev-pills">${pills||'<span style="color:var(--c-clean);font-size:10px">&#10003; Clean</span>'}</div>
+        </div>
+        <div style="flex-shrink:0;color:var(--muted);font-size:11px;font-family:var(--mono);margin-right:8px">
+          ${f.violations.length} issue${f.violations.length!==1?'s':''}</div>
+        <div class="file-chevron">&#9660;</div>
+      </div>
+      <div class="file-body-v2">
+        ${f.violations.length?
+          `<table class="issue-table" style="margin:0"><thead><tr>
+            <th>Severity</th><th>Rule ID</th><th>Issue</th><th>Line</th><th></th>
+          </tr></thead><tbody>${rows}</tbody></table>`
+          :`<div class="empty-state" style="padding:30px"><div style="font-size:28px;margin-bottom:8px">&#10003;</div>No violations</div>`
+        }
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleFileCard(fi){document.getElementById('fcard-'+fi).classList.toggle('open');}
+function toggleFDetail(id){
+  const row=document.getElementById('frow-'+id);
+  const detail=document.getElementById('fdetail-'+id);
+  const isOpen=detail.classList.contains('open');
+  document.querySelectorAll('.detail-row.open').forEach(r=>r.classList.remove('open'));
+  document.querySelectorAll('.issue-row.expanded').forEach(r=>r.classList.remove('expanded'));
+  if(!isOpen){detail.classList.add('open');row.classList.add('expanded');}
+}
+
+function buildRulesTable(){
+  document.getElementById('rules-count-label').textContent=REPORT_DATA.rules.length+' rules';
+  document.getElementById('rules-tbody').innerHTML=REPORT_DATA.rules.map(r=>{
+    const sc=SEV_COLORS[r.severity]||'var(--muted)';
+    const sb=SEV_BG[r.severity];const sbo=SEV_BORDER[r.severity];
+    return `<tr>
+      <td><span class="rule-id-tag">${esc(r.id)}</span></td>
+      <td><div class="sev-tag" style="--tag-color:${sc};--tag-bg:${sb};--tag-border:${sbo}">
+        <span class="sev-dot"></span>${r.severity.toUpperCase()}</div></td>
+      <td style="color:var(--muted);font-family:var(--mono);font-size:10px">${esc(r.category)}</td>
+      <td>${esc(r.name)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function setFilter(sev){
+  currentFilter=sev;
+  document.querySelectorAll('.filter-chip').forEach(c=>{
+    c.classList.toggle('active',c.dataset.sev===sev);
+  });
+  switchView('issues');
+  renderIssueTable();
+}
+
+function applySearch(){searchQuery=document.getElementById('search-box').value;renderIssueTable();}
+
+function sortTable(key){
+  if(currentSort.key===key)currentSort.dir*=-1;
+  else{currentSort.key=key;currentSort.dir=1;}
+  document.querySelectorAll('.issue-table thead th').forEach(th=>th.classList.remove('sorted'));
+  const th=document.getElementById('th-'+key);
+  if(th)th.classList.add('sorted');
+  renderIssueTable();
+}
+
+function switchView(name){
+  ['issues','files','rules'].forEach(v=>{
+    document.getElementById('view-'+v).style.display=v===name?'':'none';
+    document.getElementById('tab-'+v).classList.toggle('active',v===name);
+  });
+}
+
+</script>
+</body>
+</html>

