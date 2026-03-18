@@ -59,7 +59,7 @@ The `.vsix` file is included in this repository.
 1. Open **VS Code**
 2. `Ctrl+Shift+P` → **Extensions: Install from VSIX...**
 3. Navigate to the repo folder you cloned/extracted in Step 1
-4. Open `vscode-extension/` → select **`iac-quality-reviewer-1.1.0.vsix`**
+4. Open `vscode-extension/` → select **`iac-quality-reviewer-1.2.0.vsix`**
 5. Click **Install**
 6. **Reload VS Code** when prompted
 
