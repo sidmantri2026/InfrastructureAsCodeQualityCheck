@@ -95,6 +95,33 @@ def load_rules(rules_dir: str) -> list[dict]:
     return rules
 
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# .reviewer.yml config loader
+# ─────────────────────────────────────────────────────────────────────────────
+
+def load_reviewer_config(target: str) -> dict:
+    """Load .reviewer.yml from the target directory (or its parents).
+    Returns dict with keys: disabled_rules (set), severity_overrides (dict)."""
+    config = {"disabled_rules": set(), "severity_overrides": {}}
+    # Walk up from target path looking for .reviewer.yml
+    search_path = Path(target) if Path(target).is_dir() else Path(target).parent
+    for directory in [search_path] + list(search_path.parents):
+        candidate = directory / ".reviewer.yml"
+        if candidate.exists():
+            try:
+                data = yaml.safe_load(candidate.read_text(encoding="utf-8")) or {}
+                disabled = data.get("disabled_rules", []) or []
+                config["disabled_rules"] = set(disabled)
+                config["severity_overrides"] = data.get("severity_overrides", {}) or {}
+                print(f"  [config] Loaded .reviewer.yml from {candidate}")
+                print(f"  [config] {len(config['disabled_rules'])} rules disabled")
+            except Exception as e:
+                print(f"  [config] Warning: could not parse {candidate}: {e}")
+            break  # stop at first found
+    return config
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Matchers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1074,6 +1101,260 @@ const REPORT_DATA = JSON.parse(document.getElementById('report-data').textConten
         f.write(html)
 
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Interactive new-rule wizard
+# ─────────────────────────────────────────────────────────────────────────────
+
+def run_new_rule_wizard(rules_dir: str):
+    """Interactive CLI wizard to create a new rule. Appends to rules/<tech>_custom.yaml."""
+    import readline  # enables arrow keys / edit in input()
+
+    print()
+    print("╔══════════════════════════════════════════════════════════╗")
+    print("║          IaC Quality Reviewer — New Rule Wizard         ║")
+    print("╚══════════════════════════════════════════════════════════╝")
+    print()
+
+    def ask(prompt, options=None, default=None):
+        if options:
+            print(f"  {prompt}")
+            for i, opt in enumerate(options, 1):
+                marker = " (default)" if opt == default else ""
+                print(f"    {i}. {opt}{marker}")
+            while True:
+                raw = input("  Enter number or value: ").strip()
+                if not raw and default:
+                    return default
+                if raw.isdigit() and 1 <= int(raw) <= len(options):
+                    return options[int(raw) - 1]
+                if raw in options:
+                    return raw
+                print("  ⚠ Invalid choice, try again.")
+        else:
+            val = input(f"  {prompt}{' [' + default + ']' if default else ''}: ").strip()
+            return val if val else (default or "")
+
+    def ask_multiline(prompt):
+        print(f"  {prompt}")
+        print("  (Paste your code. Enter an empty line to finish.)")
+        lines = []
+        while True:
+            line = input("  > ")
+            if line == "" and lines:
+                break
+            lines.append(line)
+        return "\n".join(lines)
+
+    # ── Step 1: Technology ───────────────────────────────────────────────────
+    print("── Step 1/7: Technology ─────────────────────────────────────")
+    tech = ask("Which technology does this rule apply to?",
+               ["ansible", "bash", "powershell", "jenkinsfile"])
+
+    # ── Step 2: Category ─────────────────────────────────────────────────────
+    print()
+    print("── Step 2/7: Category ───────────────────────────────────────")
+    tech_label = {"ansible":"Ansible","bash":"Bash","powershell":"PowerShell","jenkinsfile":"Jenkinsfile"}[tech]
+    categories = {
+        "ansible":    ["Linting & Style","Security","Idempotency","Hardcoding & Sensitive Data","Custom"],
+        "bash":       ["Linting & Style","Security","Error Handling","Idempotency","Hardcoding & Sensitive Data","Custom"],
+        "powershell": ["Linting & Style","Security","Error Handling","Idempotency","Hardcoding & Sensitive Data","Custom"],
+        "jenkinsfile":["Linting & Style","Security","Error Handling","Idempotency","Hardcoding & Sensitive Data","Custom"],
+    }
+    short_cat = ask("Which category does this rule belong to?", categories[tech])
+    category  = f"{tech_label} - {short_cat}"
+
+    # ── Step 3: Rule name & ID ───────────────────────────────────────────────
+    print()
+    print("── Step 3/7: Rule Name ──────────────────────────────────────")
+    rule_name = ask("Short descriptive name for the rule (e.g. 'Tasks must have a name'):")
+    while not rule_name:
+        print("  ⚠ Rule name cannot be empty.")
+        rule_name = ask("Short descriptive name:")
+
+    # ── Pick target rules file ───────────────────────────────────────────────
+    rules_dir_path = Path(rules_dir)
+    # Find all existing rule files for this technology
+    tech_files = sorted([
+        f for f in rules_dir_path.glob("*.yaml")
+        if f.stem.startswith(tech)
+    ])
+    NEW_FILE_OPTION = f"[Create new file: {tech}_custom.yaml]"
+    file_choices = [f.name for f in tech_files] + [NEW_FILE_OPTION]
+
+    print()
+    print("── Step 3b/7: Choose Rules File ─────────────────────────────")
+    print("  Which file should this rule be added to?")
+    chosen_name = ask("Select a file to append this rule to:", file_choices,
+                      default=NEW_FILE_OPTION)
+    if chosen_name == NEW_FILE_OPTION:
+        target_file = rules_dir_path / f"{tech}_custom.yaml"
+    else:
+        target_file = rules_dir_path / chosen_name
+    print(f"  → Will save to: {target_file.name}")
+
+    # Auto-generate ID using ALL existing IDs in target file as reference
+    prefix_map = {"ansible":"ANS","bash":"BASH","powershell":"PS","jenkinsfile":"JNK"}
+    cat_map     = {"Linting & Style":"LINT","Security":"SEC","Error Handling":"ERR",
+                   "Idempotency":"IDEM","Hardcoding & Sensitive Data":"HARD","Custom":"CUST"}
+    prefix = f"{prefix_map[tech]}-{cat_map.get(short_cat,'CUST')}"
+    # Scan ALL rule files for this tech to avoid duplicate numbers
+    all_existing_ids = []
+    for f in tech_files:
+        try:
+            d = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
+            all_existing_ids += [r.get("id","") for r in d.get("rules", [])]
+        except Exception:
+            pass
+    nums = [int(id_.split("-")[-1]) for id_ in all_existing_ids
+            if id_.startswith(prefix + "-") and id_.split("-")[-1].isdigit()]
+    next_num = (max(nums) + 1) if nums else 1
+    rule_id  = f"{prefix}-{next_num:03d}"
+    print()
+    print(f"  → Auto-generated Rule ID: {rule_id}")
+    custom_id = ask("Accept this ID or enter a custom one:", [rule_id, "Enter custom ID"])
+    if custom_id == "Enter custom ID":
+        custom_id = ask("Enter custom Rule ID:") or rule_id
+        rule_id = custom_id
+    else:
+        rule_id = custom_id
+
+    # ── Step 4: Severity ─────────────────────────────────────────────────────
+    print()
+    print("── Step 4/7: Severity ───────────────────────────────────────")
+    print("  CRITICAL — Security risk / must fix before merge  (blocks Jenkins)")
+    print("  ERROR    — Clear standards violation              (blocks Jenkins)")
+    print("  WARNING  — Best practice not followed             (Jenkins passes)")
+    print("  INFO     — Style / documentation suggestion       (Jenkins passes)")
+    severity = ask("Choose severity:", ["critical","error","warning","info"], default="warning")
+
+    # ── Step 5: Description & rationale ──────────────────────────────────────
+    print()
+    print("── Step 5/7: Description ────────────────────────────────────")
+    description = ask("What does this rule check? (plain English, one sentence):")
+    while not description:
+        description = ask("Description cannot be empty:")
+
+    print()
+    rationale = ask("Why does this rule exist? (shown to developers in reports):")
+
+    # ── Step 6: Match pattern ────────────────────────────────────────────────
+    print()
+    print("── Step 6/7: Detection Pattern ──────────────────────────────")
+    match_type = ask("How should this rule detect violations?", [
+        "regex           — search for a pattern in file lines",
+        "file_missing_pattern — flag file if a required pattern is absent",
+        "file_length      — flag file if it exceeds a max line count",
+        "line_length      — flag lines exceeding a max character count",
+    ])
+    match_type = match_type.split()[0]
+
+    pattern = ""
+    extra   = {}
+    if match_type == "regex":
+        print()
+        print("  Enter a Python regex pattern that matches the PROBLEMATIC code.")
+        print("  Examples:  eval\\s+  |  hardcoded_password\\s*=  |  ^\\s*rm\\s+-rf")
+        pattern = ask("Regex pattern (leave blank to fill in manually later):")
+        flags   = ask("Case insensitive?", ["no", "yes"], default="no")
+        if flags == "yes":
+            extra["flags"] = "IGNORECASE"
+        excl = ask("Exclude pattern (lines matching this will be skipped, leave blank if none):")
+        if excl:
+            extra["exclude_pattern"] = excl
+    elif match_type == "file_missing_pattern":
+        pattern = ask("Required pattern (file is flagged if this is NOT found):")
+        extra["required_pattern"] = pattern
+        extra["search_lines"] = 20
+        pattern = ""
+    elif match_type == "file_length":
+        max_l = ask("Maximum allowed lines:", default="200")
+        extra["max_lines"] = int(max_l) if max_l.isdigit() else 200
+    elif match_type == "line_length":
+        max_l = ask("Maximum line length (characters):", default="160")
+        extra["max_length"] = int(max_l) if max_l.isdigit() else 160
+
+    # ── Step 7: Examples ─────────────────────────────────────────────────────
+    print()
+    print("── Step 7/7: Code Examples ───────────────────────────────────")
+    print("  These appear in the HTML report and VS Code hover text.")
+    want_examples = ask("Add code examples?", ["yes","no"], default="yes")
+
+    example_bad  = ""
+    example_good = ""
+    if want_examples == "yes":
+        print()
+        example_bad  = ask_multiline("Paste an example of BAD/problematic code:")
+        print()
+        example_good = ask_multiline("Paste an example of GOOD/recommended code:")
+
+    # ── Build YAML rule ───────────────────────────────────────────────────────
+    rule = {
+        "id":          rule_id,
+        "name":        rule_name,
+        "severity":    severity,
+        "description": description,
+    }
+    if rationale:
+        rule["rationale"] = rationale
+    rule["match_type"] = match_type
+    if pattern:
+        rule["pattern"] = pattern
+    rule.update(extra)
+    if example_bad:
+        rule["example_bad"] = example_bad + "\n"
+    if example_good:
+        rule["example_good"] = example_good + "\n"
+
+    # ── Show preview ──────────────────────────────────────────────────────────
+    print()
+    print("── Preview ───────────────────────────────────────────────────")
+    preview = yaml.dump([rule], default_flow_style=False, allow_unicode=True, sort_keys=False)
+    for line in preview.split("\n")[:25]:
+        print(f"  {line}")
+    if len(preview.split("\n")) > 25:
+        print("  ...")
+    print()
+
+    confirm = ask("Save this rule?", ["yes","no","edit manually"], default="yes")
+    if confirm == "no":
+        print("  Cancelled — no rule was saved.")
+        return
+    if confirm == "edit manually":
+        print()
+        print(f"  → Add the YAML above to: {target_file}")
+        print(f"  → Then run: python3 reviewer.py --list-rules | grep {rule_id}")
+        return
+
+    # ── Write to chosen file ──────────────────────────────────────────────────
+    if target_file.exists():
+        existing = yaml.safe_load(target_file.read_text(encoding="utf-8")) or {}
+        if "rules" not in existing:
+            existing["rules"] = []
+    else:
+        existing = {
+            "category":    category,
+            "technology":  tech,
+            "description": f"Custom rules for {tech_label}.",
+            "rules":       []
+        }
+
+    existing["rules"].append(rule)
+    target_file.write_text(
+        yaml.dump(existing, default_flow_style=False, allow_unicode=True, sort_keys=False),
+        encoding="utf-8"
+    )
+
+    total_in_file = len(existing["rules"])
+    print()
+    print(f"  ✅  Rule {rule_id} saved to: {target_file.name}")
+    print(f"      That file now contains {total_in_file} rule(s).")
+    print()
+    print("  ── Test it now ──────────────────────────────────────────────")
+    print(f"  python3 reviewer.py --list-rules | grep {rule_id}")
+    print(f"  python3 reviewer.py sample_playbooks/ --min-severity {severity}")
+    print()
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Entry point
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1090,9 +1371,26 @@ def main():
     parser.add_argument("--json", action="store_true", help="Output JSON instead of HTML")
     parser.add_argument("--list-rules", action="store_true", help="List all loaded rules and exit")
     parser.add_argument("--min-severity", choices=["critical","error","warning","info"], default="info", help="Minimum severity to report")
+    parser.add_argument("--new-rule", action="store_true", help="Launch interactive wizard to create a new rule")
+    parser.add_argument("--rule-manager", action="store_true", help="Open the HTML rule manager GUI in your browser")
     args = parser.parse_args()
 
     rules = load_rules(args.rules_dir)
+
+    if args.new_rule:
+        run_new_rule_wizard(args.rules_dir)
+        return
+
+    if args.rule_manager:
+        import webbrowser
+        manager_path = Path(__file__).parent / "rule_manager.html"
+        if manager_path.exists():
+            webbrowser.open(f"file://{manager_path}")
+            print(f"✅ Opening Rule Manager: {manager_path}")
+        else:
+            print(f"❌ rule_manager.html not found at: {manager_path}")
+            print("   Download it from the repository.")
+        return
 
     if args.list_rules:
         print(f"\n{'ID':<18} {'SEV':<10} {'CATEGORY':<25} {'NAME'}")
@@ -1106,7 +1404,14 @@ def main():
     files  = gather_files(target)
 
     if not files:
-        print(f"No YAML files found at: {target}")
+        print(f"No supported files found at: {target}")
+
+    # Load .reviewer.yml config (disabled rules, severity overrides)
+    reviewer_cfg = load_reviewer_config(target)
+    disabled_ids = reviewer_cfg["disabled_rules"]
+    if disabled_ids:
+        rules = [r for r in rules if r["id"] not in disabled_ids]
+        print(f"  [config] {len(disabled_ids)} rules disabled by .reviewer.yml")
 
     results = []
     sev_idx = SEVERITY_ORDER[args.min_severity]

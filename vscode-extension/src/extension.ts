@@ -247,6 +247,23 @@ async function openLatestReport() {
 }
 
 // ─── List rules ───────────────────────────────────────────────────────────────
+async function openRuleManager() {
+  const script = findReviewerScript();
+  if (!script) { vscode.window.showErrorMessage('reviewer.py not found.'); return; }
+  const managerPath = path.join(path.dirname(script), 'rule_manager.html');
+  if (!require('fs').existsSync(managerPath)) {
+    vscode.window.showErrorMessage(
+      'rule_manager.html not found. Make sure you have the latest version of the repository.',
+      'Open Repository'
+    ).then(sel => {
+      if (sel) { vscode.env.openExternal(vscode.Uri.parse('https://github.com/sidmantri2026/InfrastructureAsCodeQualityCheck')); }
+    });
+    return;
+  }
+  outputChannel.appendLine(`[Rule Manager] Opening: ${managerPath}`);
+  openInSystemBrowser(managerPath);
+}
+
 async function listRules() {
   const cfg    = vscode.workspace.getConfiguration('iacReviewer');
   const python = cfg.get<string>('pythonPath', 'python3');
@@ -332,9 +349,12 @@ export function activate(context: vscode.ExtensionContext) {
     }),
 
     // Open latest report in system browser
-    vscode.commands.registerCommand('iacReviewer.openReport', openLatestReport),
+    vscode.commands.registerCommand('iacReviewer.openReport',      openLatestReport),
 
-    vscode.commands.registerCommand('iacReviewer.listRules', listRules),
+    // Open Rule Manager GUI in system browser
+    vscode.commands.registerCommand('iacReviewer.openRuleManager', openRuleManager),
+
+    vscode.commands.registerCommand('iacReviewer.listRules',       listRules),
 
     vscode.commands.registerCommand('iacReviewer.clearDiagnostics', () => {
       diagnosticCollection.clear();

@@ -2,7 +2,7 @@
   "name": "iac-quality-reviewer",
   "displayName": "IaC Quality Reviewer",
   "description": "Infrastructure Automation Team \u2014 rule-driven static analysis for Ansible, Bash, PowerShell, and Jenkinsfiles",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "publisher": "infra-automation-team",
   "engines": {
     "vscode": "^1.75.0"
@@ -71,6 +71,11 @@
         "command": "iacReviewer.clearDiagnostics",
         "title": "\ud83e\uddf9 Clear All Diagnostics",
         "category": "IaC Reviewer"
+      },
+      {
+        "command": "iacReviewer.openRuleManager",
+        "title": "\u2699 Open Rule Manager",
+        "category": "IaC Reviewer"
       }
     ],
     "configuration": {
@@ -130,6 +135,10 @@
           "command": "iacReviewer.reviewSelectedHtml",
           "group": "iacreviewer@2",
           "when": "explorerResourceIsFolder || resourceExtname =~ /\\.(yml|yaml|sh|ps1|groovy|jenkinsfile)$/ || resourceFilename =~ /^[Jj]enkinsfile/"
+        },
+        {
+          "command": "iacReviewer.openRuleManager",
+          "group": "iacreviewer@3"
         }
       ],
       "editor/context": [
@@ -142,6 +151,10 @@
           "command": "iacReviewer.reviewSelectedHtml",
           "group": "iacreviewer@2",
           "when": "resourceExtname =~ /\\.(yml|yaml|sh|ps1|groovy|jenkinsfile)$/ || resourceFilename =~ /^[Jj]enkinsfile/"
+        },
+        {
+          "command": "iacReviewer.openRuleManager",
+          "group": "iacreviewer@3"
         }
       ]
     },
