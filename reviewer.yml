@@ -1,0 +1,10 @@
+# .reviewer.yml
+# Place this file at the root of your project.
+# The reviewer engine will skip any rules listed below.
+# Generated: 2026-03-20 20:17:41
+# Disabled: 1 of 211 rules
+
+disabled_rules:
+
+  # Ansible
+  - ANS-IDE-004  # Tags must be applied to all tasks in shared roles

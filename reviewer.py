@@ -1355,6 +1355,238 @@ def run_new_rule_wizard(rules_dir: str):
     print(f"  python3 reviewer.py sample_playbooks/ --min-severity {severity}")
     print()
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Rule edit / delete helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _find_all_rule_files(rules_dir: str) -> list:
+    """Return list of (path, parsed_data) for every YAML rule file."""
+    results = []
+    for f in sorted(Path(rules_dir).glob("*.yaml")):
+        try:
+            data = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
+            if "rules" in data:
+                results.append((f, data))
+        except Exception:
+            pass
+    return results
+
+
+def _save_rule_file(path: Path, data: dict):
+    """Write a rule file back to disk, preserving top-level metadata."""
+    path.write_text(
+        yaml.dump(data, default_flow_style=False, allow_unicode=True,
+                  sort_keys=False, width=120),
+        encoding="utf-8"
+    )
+
+
+def _pick_rule(rules_dir: str, prompt: str = "Select a rule") -> tuple:
+    """Interactive rule picker.
+    Returns (rule_dict, file_path, file_data, rule_index) or (None,None,None,None)."""
+    all_files = _find_all_rule_files(rules_dir)
+    if not all_files:
+        print("  No rule files found.")
+        return None, None, None, None
+
+    all_rules = []
+    for fpath, fdata in all_files:
+        for idx, r in enumerate(fdata.get("rules", [])):
+            all_rules.append((r, fpath, fdata, idx))
+
+    if not all_rules:
+        print("  No rules found in rule files.")
+        return None, None, None, None
+
+    print()
+    print(f"  {prompt}")
+    print()
+    print(f"  {'#':<5} {'ID':<22} {'SEV':<10} {'FILE':<35} NAME")
+    print("  " + "─" * 100)
+    for i, (r, fpath, _, _) in enumerate(all_rules, 1):
+        print(f"  {i:<5} {r.get('id',''):<22} {r.get('severity',''):<10} {fpath.name:<35} {r.get('name','')}")
+
+    print()
+    while True:
+        raw = input("  Enter rule number (or 'q' to quit): ").strip()
+        if raw.lower() == 'q':
+            return None, None, None, None
+        if raw.isdigit() and 1 <= int(raw) <= len(all_rules):
+            return all_rules[int(raw) - 1]
+        # Also allow searching by rule ID
+        matches = [(r, fp, fd, idx) for (r, fp, fd, idx) in all_rules
+                   if r.get("id","").upper() == raw.upper()]
+        if matches:
+            return matches[0]
+        print(f"  ⚠  Invalid selection. Enter a number 1–{len(all_rules)} or a rule ID.")
+
+
+def run_edit_rule_wizard(rules_dir: str):
+    """Interactive CLI wizard to edit any field of an existing rule."""
+    print()
+    print("╔══════════════════════════════════════════════════════════╗")
+    print("║          IaC Quality Reviewer — Edit Rule Wizard        ║")
+    print("╚══════════════════════════════════════════════════════════╝")
+
+    rule, fpath, fdata, ridx = _pick_rule(rules_dir, "Which rule do you want to edit?")
+    if rule is None:
+        print("  Cancelled.")
+        return
+
+    print()
+    print(f"  Editing: {rule.get('id')}  [{rule.get('severity')}]  {rule.get('name')}")
+    print(f"  File:    {fpath.name}")
+    print()
+
+    FIELDS = [
+        ("id",           "Rule ID"),
+        ("name",         "Name"),
+        ("severity",     "Severity"),
+        ("description",  "Description"),
+        ("rationale",    "Rationale"),
+        ("match_type",   "Match type"),
+        ("pattern",      "Regex pattern"),
+        ("exclude_pattern", "Exclude pattern"),
+        ("example_bad",  "Bad code example"),
+        ("example_good", "Good code example"),
+    ]
+
+    def ask_field(label, current, multiline=False):
+        if multiline:
+            print(f"  ── {label} ──────────────────────────────────────────")
+            print(f"  Current value:")
+            for line in str(current or "").split("\n"):
+                print(f"    {line}")
+            print()
+            print("  Enter new value (empty lines finish input; enter '---KEEP---' to keep current):")
+            lines = []
+            while True:
+                ln = input("  > ")
+                if ln == "---KEEP---":
+                    return current
+                if ln == "" and lines:
+                    break
+                if ln == "" and not lines:
+                    return current   # immediate empty = keep
+                lines.append(ln)
+            return "\n".join(lines)
+        else:
+            print(f"  ── {label} ──────────────────────────────────────────")
+            print(f"  Current: {repr(current)}")
+            val = input(f"  New value (Enter to keep): ").strip()
+            return val if val else current
+
+    changed = {}
+    for key, label in FIELDS:
+        if key not in rule and key not in ("exclude_pattern", "pattern"):
+            continue   # skip fields that don't exist in the rule unless common
+        current = rule.get(key, "")
+        multiline = key in ("description","rationale","example_bad","example_good")
+
+        if key == "severity":
+            print(f"  ── Severity ─────────────────────────────────────────")
+            print(f"  Current: {current}")
+            print("  Options: critical / error / warning / info")
+            val = input("  New value (Enter to keep): ").strip()
+            new_val = val if val in ("critical","error","warning","info") else current
+        else:
+            new_val = ask_field(label, current, multiline=multiline)
+
+        if str(new_val) != str(current):
+            changed[key] = new_val
+        print()
+
+    if not changed:
+        print("  No changes made.")
+        return
+
+    # Show diff
+    print("  ── Changes ──────────────────────────────────────────────")
+    for key, new_val in changed.items():
+        print(f"  {key}:")
+        print(f"    WAS: {repr(str(rule.get(key,'')))[:80]}")
+        print(f"    NOW: {repr(str(new_val))[:80]}")
+    print()
+
+    confirm = input("  Apply these changes? [y/N]: ").strip().lower()
+    if confirm != "y":
+        print("  Cancelled — no changes saved.")
+        return
+
+    # Apply
+    for key, new_val in changed.items():
+        rule[key] = new_val
+    fdata["rules"][ridx] = rule
+    _save_rule_file(fpath, fdata)
+
+    print()
+    print(f"  ✅  Rule {rule.get('id')} updated in {fpath.name}")
+    print(f"      Changes applied: {', '.join(changed.keys())}")
+    print()
+    print("  Reload VS Code or re-run reviewer.py to pick up the changes.")
+    print()
+
+
+def run_delete_rule_wizard(rules_dir: str, rule_id_arg: str = ""):
+    """Interactive CLI wizard to delete an existing rule."""
+    print()
+    print("╔══════════════════════════════════════════════════════════╗")
+    print("║         IaC Quality Reviewer — Delete Rule Wizard       ║")
+    print("╚══════════════════════════════════════════════════════════╝")
+
+    # If rule ID was passed on the command line, find it directly
+    if rule_id_arg:
+        all_files = _find_all_rule_files(rules_dir)
+        found = None
+        for fpath, fdata in all_files:
+            for idx, r in enumerate(fdata.get("rules", [])):
+                if r.get("id","").upper() == rule_id_arg.upper():
+                    found = (r, fpath, fdata, idx)
+                    break
+            if found:
+                break
+        if not found:
+            print(f"  ❌  Rule '{rule_id_arg}' not found in any rule file.")
+            return
+        rule, fpath, fdata, ridx = found
+    else:
+        rule, fpath, fdata, ridx = _pick_rule(rules_dir, "Which rule do you want to delete?")
+        if rule is None:
+            print("  Cancelled.")
+            return
+
+    print()
+    print(f"  Rule to delete:")
+    print(f"  ┌─────────────────────────────────────────────────────")
+    print(f"  │  ID:       {rule.get('id')}")
+    print(f"  │  Name:     {rule.get('name')}")
+    print(f"  │  Severity: {rule.get('severity')}")
+    print(f"  │  File:     {fpath.name}")
+    print(f"  └─────────────────────────────────────────────────────")
+    print()
+    print("  ⚠  This permanently removes the rule from the YAML file.")
+    print("     It cannot be undone (unless you use git to restore it).")
+    print()
+
+    confirm = input(f"  Type the Rule ID to confirm deletion [{rule.get('id')}]: ").strip()
+    if confirm.upper() != rule.get("id","").upper():
+        print("  ❌  ID did not match. Deletion cancelled.")
+        return
+
+    # Delete
+    rules_list = fdata["rules"]
+    deleted = rules_list.pop(ridx)
+    _save_rule_file(fpath, fdata)
+
+    remaining = len(rules_list)
+    print()
+    print(f"  ✅  Rule {deleted.get('id')} deleted from {fpath.name}")
+    print(f"      That file now contains {remaining} rule(s).")
+    print()
+    print("  Tip: If you deleted this by mistake, run:  git checkout -- rules/" + fpath.name)
+    print()
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Entry point
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1371,14 +1603,25 @@ def main():
     parser.add_argument("--json", action="store_true", help="Output JSON instead of HTML")
     parser.add_argument("--list-rules", action="store_true", help="List all loaded rules and exit")
     parser.add_argument("--min-severity", choices=["critical","error","warning","info"], default="info", help="Minimum severity to report")
-    parser.add_argument("--new-rule", action="store_true", help="Launch interactive wizard to create a new rule")
-    parser.add_argument("--rule-manager", action="store_true", help="Open the HTML rule manager GUI in your browser")
+    parser.add_argument("--new-rule",    action="store_true", help="Launch interactive wizard to create a new rule")
+    parser.add_argument("--edit-rule",   action="store_true", help="Launch interactive wizard to edit an existing rule")
+    parser.add_argument("--delete-rule", nargs="?", const="",  metavar="RULE_ID",
+                        help="Delete a rule interactively, or pass a Rule ID to delete directly (e.g. --delete-rule ANS-SEC-002)")
+    parser.add_argument("--rule-manager",action="store_true", help="Open the HTML rule manager GUI in your browser")
     args = parser.parse_args()
 
     rules = load_rules(args.rules_dir)
 
     if args.new_rule:
         run_new_rule_wizard(args.rules_dir)
+        return
+
+    if args.edit_rule:
+        run_edit_rule_wizard(args.rules_dir)
+        return
+
+    if args.delete_rule is not None:
+        run_delete_rule_wizard(args.rules_dir, args.delete_rule)
         return
 
     if args.rule_manager:
