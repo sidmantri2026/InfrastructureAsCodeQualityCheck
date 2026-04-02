@@ -1,0 +1,293 @@
+category: Python - Linting & Style
+technology: python
+description: >
+  Linting and style rules for Python infrastructure automation scripts.
+  Enforces PEP 8 conventions, structural clarity, and maintainability
+  standards appropriate for DevOps and IaC Python code.
+
+rules:
+
+  - id: PY-LINT-001
+    name: Scripts must have a module-level docstring
+    severity: warning
+    description: >
+      Every Python script used in infrastructure automation must begin with a
+      module-level docstring describing its purpose, usage, and any required
+      environment variables or arguments.
+    rationale: >
+      Infrastructure scripts are run by engineers who did not write them, often
+      under time pressure during incidents. A docstring at the top tells them
+      immediately what the script does and how to run it safely.
+    match_type: file_missing_pattern
+    required_pattern: '^\s*"""'
+    search_lines: 10
+    example_bad: |
+      import boto3
+      import sys
+
+      def main():
+          pass
+    example_good: |
+      """
+      Provision S3 buckets for a new environment.
+      Usage: python provision_buckets.py --env prod
+      Requires: AWS_PROFILE env var or IAM instance role.
+      """
+      import boto3
+      import sys
+
+  - id: PY-LINT-002
+    name: Functions must have docstrings
+    severity: info
+    description: >
+      Functions longer than 5 lines must have a docstring explaining what they
+      do, their parameters, and what they return.
+    rationale: >
+      Infrastructure functions often have side effects (API calls, file writes,
+      network requests). A docstring makes the contract explicit and prevents
+      misuse by other engineers.
+    match_type: regex
+    pattern: '^\s*def\s+\w+\s*\(.*\)\s*:\s*\n\s+(?!""")'
+    exclude_pattern: '^\s*def\s+(test_|setUp|tearDown)'
+    example_bad: |
+      def create_bucket(name, region):
+          s3 = boto3.client('s3', region_name=region)
+          s3.create_bucket(Bucket=name)
+          s3.put_bucket_versioning(Bucket=name,
+              VersioningConfiguration={'Status': 'Enabled'})
+    example_good: |
+      def create_bucket(name, region):
+          """
+          Create an S3 bucket with versioning enabled.
+
+          Args:
+              name (str): Globally unique bucket name.
+              region (str): AWS region code, e.g. 'eu-west-1'.
+          """
+          s3 = boto3.client('s3', region_name=region)
+          s3.create_bucket(Bucket=name)
+
+  - id: PY-LINT-003
+    name: Line length must not exceed 120 characters
+    severity: warning
+    description: >
+      No line in an infrastructure Python script should exceed 120 characters.
+      Use line continuation or refactor long expressions.
+    rationale: >
+      Long lines are hard to read in terminals, code review tools, and side-by-side
+      diff views. 120 characters is a relaxed limit appropriate for infrastructure
+      code that often includes long resource names and ARNs.
+    match_type: line_length
+    max_length: 120
+    example_bad: |
+      response = boto3.client('ec2').describe_instances(Filters=[{'Name': 'tag:Environment', 'Values': ['production']}, {'Name': 'instance-state-name', 'Values': ['running']}])
+    example_good: |
+      response = boto3.client('ec2').describe_instances(
+          Filters=[
+              {'Name': 'tag:Environment', 'Values': ['production']},
+              {'Name': 'instance-state-name', 'Values': ['running']},
+          ]
+      )
+
+  - id: PY-LINT-004
+    name: Use f-strings instead of % or .format() string formatting
+    severity: info
+    description: >
+      Use f-strings (f"...{var}...") for string interpolation instead of
+      %-formatting or .format() calls. F-strings are more readable and
+      less error-prone.
+    rationale: >
+      F-strings are the modern Python standard (3.6+). They are more readable,
+      faster at runtime, and prevent common mistakes like mismatched argument
+      counts in .format() calls or wrong type codes in %-formatting.
+    match_type: regex
+    pattern: '(\"[^\"]*%[sd][^\"]*\"\s*%\s*\w|\bformat\s*\()'
+    exclude_pattern: '#|logging\.|logger\.|log\.'
+    example_bad: |
+      print("Deploying %s to %s" % (service, env))
+      msg = "Instance {} is {}".format(instance_id, state)
+    example_good: |
+      print(f"Deploying {service} to {env}")
+      msg = f"Instance {instance_id} is {state}"
+
+  - id: PY-LINT-005
+    name: No bare wildcard imports
+    severity: error
+    description: >
+      Wildcard imports (from module import *) are forbidden in infrastructure
+      scripts. Import only the names you actually use.
+    rationale: >
+      Wildcard imports make it impossible to know where a name comes from,
+      pollute the namespace, and can silently override built-ins or other
+      imported names. This is especially dangerous in infrastructure code
+      where a shadowed name can cause a silent incorrect operation.
+    match_type: regex
+    pattern: '^\s*from\s+\S+\s+import\s+\*'
+    example_bad: |
+      from boto3 import *
+      from os.path import *
+    example_good: |
+      import boto3
+      from os.path import join, exists, dirname
+
+  - id: PY-LINT-006
+    name: Use argparse for command-line argument parsing
+    severity: warning
+    description: >
+      Scripts that accept command-line arguments must use the argparse module,
+      not manual sys.argv indexing.
+    rationale: >
+      argparse provides automatic --help, type validation, and meaningful error
+      messages. Manual sys.argv[1] indexing breaks silently when arguments are
+      missing or in the wrong order.
+    match_type: regex
+    pattern: 'sys\.argv\[\d+\]'
+    exclude_pattern: '#|len\(sys\.argv\)'
+    example_bad: |
+      env    = sys.argv[1]
+      region = sys.argv[2]
+    example_good: |
+      parser = argparse.ArgumentParser(description='Deploy infrastructure')
+      parser.add_argument('--env',    required=True)
+      parser.add_argument('--region', default='eu-west-1')
+      args = parser.parse_args()
+
+  - id: PY-LINT-007
+    name: Scripts must use if __name__ == "__main__" guard
+    severity: warning
+    description: >
+      Executable Python scripts must wrap their entry point in an
+      if __name__ == "__main__": block so they can be imported as a
+      module without executing side effects.
+    rationale: >
+      Without the main guard, importing the script for testing or reuse
+      immediately executes all top-level code — triggering API calls,
+      file writes, or deployments unintentionally.
+    match_type: file_missing_pattern
+    required_pattern: 'if\s+__name__\s*==\s*[''"]__main__[''"]'
+    search_lines: 9999
+    example_bad: |
+      def deploy():
+          pass
+
+      deploy()   # runs on import!
+    example_good: |
+      def deploy():
+          pass
+
+      if __name__ == "__main__":
+          deploy()
+
+  - id: PY-LINT-008
+    name: No print() statements — use logging module
+    severity: warning
+    description: >
+      Infrastructure scripts must use the logging module instead of print()
+      for all output. print() calls are acceptable only in interactive CLI
+      tools (argparse-driven scripts with user-facing output).
+    rationale: >
+      print() output cannot be controlled by log level, has no timestamps,
+      and cannot be redirected to log aggregators. When an infrastructure
+      script runs in Jenkins or via AAP, print() output is lost or mixed
+      with other output streams.
+    match_type: regex
+    pattern: '^\s*print\s*\('
+    exclude_pattern: '#|def\s+print|logging'
+    example_bad: |
+      print(f"Creating bucket {name}")
+      print("Done.")
+    example_good: |
+      import logging
+      logger = logging.getLogger(__name__)
+
+      logger.info(f"Creating bucket {name}")
+      logger.info("Done.")
+
+  - id: PY-LINT-009
+    name: Imports must be at the top of the file
+    severity: warning
+    description: >
+      All import statements must appear at the top of the file, after the
+      module docstring and before any other code. Imports inside functions
+      or conditionals are not permitted except for optional/lazy imports
+      with an explicit comment.
+    rationale: >
+      Top-level imports make dependencies immediately visible. Imports buried
+      inside functions hide dependencies, cause unexpected ImportError at
+      runtime, and prevent static analysis tools from detecting missing packages.
+    match_type: regex
+    pattern: '^\s{4,}import\s+\w|^\s{4,}from\s+\w+\s+import'
+    exclude_pattern: '#\s*(noqa|optional|lazy|type:|pylint)'
+    example_bad: |
+      def get_secret(name):
+          import boto3        # import inside function
+          client = boto3.client('secretsmanager')
+          return client.get_secret_value(SecretId=name)
+    example_good: |
+      import boto3
+
+      def get_secret(name):
+          client = boto3.client('secretsmanager')
+          return client.get_secret_value(SecretId=name)
+
+  - id: PY-LINT-010
+    name: No single-character variable names except loop counters
+    severity: info
+    description: >
+      Variable names must be descriptive. Single-character names (e.g. x, n, s)
+      are only acceptable as loop counters (i, j, k) or in list comprehensions.
+    rationale: >
+      Infrastructure scripts are maintained by multiple engineers. Single-character
+      variable names make code nearly impossible to understand at a glance and
+      are a common source of bugs when the variable's meaning is unclear.
+    match_type: regex
+    pattern: '^\s+[a-zA-Z]\s*=\s*(?!range|enumerate|zip|map|filter)'
+    exclude_pattern: '#|for\s+[a-z]\s+in|lambda\s+[a-z]|_\s*='
+    example_bad: |
+      r = requests.get(url)
+      d = r.json()
+      s = d['status']
+    example_good: |
+      response    = requests.get(url)
+      data        = response.json()
+      status      = data['status']
+
+  - id: PY-LINT-011
+    name: Files must not exceed 500 lines
+    severity: warning
+    description: >
+      Python infrastructure scripts must not exceed 500 lines. Large scripts
+      should be split into modules.
+    rationale: >
+      Scripts over 500 lines become difficult to test, review, and maintain.
+      Infrastructure logic should be broken into focused modules — one for
+      AWS operations, one for DNS, one for the orchestration layer, etc.
+    match_type: file_length
+    max_lines: 500
+
+  - id: PY-LINT-012
+    name: Use snake_case for function and variable names
+    severity: info
+    description: >
+      Function names and variable names must use snake_case (lowercase with
+      underscores), not camelCase or PascalCase. Class names should use
+      PascalCase.
+    rationale: >
+      PEP 8 is the universally accepted Python style guide. Mixing naming
+      conventions in the same codebase is a common source of confusion,
+      especially when teams contain engineers from Java or JavaScript backgrounds.
+    match_type: regex
+    pattern: '^\s*def\s+[a-z][a-zA-Z]*[A-Z][a-zA-Z]*\s*\('
+    exclude_pattern: '#'
+    example_bad: |
+      def createBucket(bucketName, awsRegion):
+          pass
+
+      def deployStack(stackName):
+          pass
+    example_good: |
+      def create_bucket(bucket_name, aws_region):
+          pass
+
+      def deploy_stack(stack_name):
+          pass

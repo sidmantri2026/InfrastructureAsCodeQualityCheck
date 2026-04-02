@@ -1,0 +1,269 @@
+category: Python - Error Handling
+technology: python
+description: >
+  Error handling rules for Python infrastructure automation scripts.
+  Enforces robust exception handling, meaningful error messages, proper
+  cleanup, and safe failure modes critical for unattended infrastructure operations.
+
+rules:
+
+  - id: PY-ERR-001
+    name: No bare except clauses
+    severity: error
+    description: >
+      except: clauses without a specific exception type must not be used.
+      Always catch a specific exception or at minimum Exception. Never use
+      a bare except: which also catches KeyboardInterrupt and SystemExit.
+    rationale: >
+      A bare except catches everything, including KeyboardInterrupt (Ctrl+C)
+      and SystemExit, making the script impossible to stop. It also hides
+      programming errors by swallowing unexpected exceptions silently.
+      Always specify the exception type you expect.
+    match_type: regex
+    pattern: '^\s*except\s*:'
+    exclude_pattern: '#'
+    example_bad: |
+      try:
+          deploy()
+      except:
+          print("Something went wrong")
+    example_good: |
+      try:
+          deploy()
+      except boto3.exceptions.BotoCoreError as e:
+          logger.error(f"AWS API error during deploy: {e}")
+          raise
+
+  - id: PY-ERR-002
+    name: Except clauses must not silently swallow exceptions
+    severity: error
+    description: >
+      An except block must not be empty or contain only a pass or comment.
+      It must log the exception, re-raise it, or take a documented recovery action.
+    rationale: >
+      Silently swallowing exceptions in infrastructure scripts means failures
+      go undetected. A provisioning step that fails silently leaves
+      infrastructure in a partially configured state with no audit trail.
+    match_type: regex
+    pattern: '^\s*except\s+[\w\s,()]+:\s*\n\s+(pass|#)'
+    exclude_pattern: '#\s*intentional'
+    example_bad: |
+      try:
+          s3.delete_bucket(Bucket=name)
+      except ClientError:
+          pass
+    example_good: |
+      try:
+          s3.delete_bucket(Bucket=name)
+      except ClientError as e:
+          if e.response['Error']['Code'] == 'NoSuchBucket':
+              logger.warning(f"Bucket {name} already deleted — skipping")
+          else:
+              logger.error(f"Failed to delete bucket {name}: {e}")
+              raise
+
+  - id: PY-ERR-003
+    name: Cloud API calls must be wrapped in try/except
+    severity: error
+    description: >
+      All calls to cloud provider SDK methods (boto3, azure-sdk, google-cloud)
+      must be wrapped in try/except blocks. Cloud APIs can fail transiently
+      and errors must be handled explicitly.
+    rationale: >
+      Cloud API calls fail for many reasons — throttling, network issues,
+      permission errors, resource not found. An unhandled exception in the
+      middle of a provisioning script can leave resources partially created,
+      causing drift between desired and actual state that is hard to recover from.
+    match_type: regex
+    pattern: '^\s+\w+\.(create_|delete_|update_|put_|describe_|list_|get_)\w+\s*\('
+    exclude_pattern: '#|try:|except|with\s+'
+    example_bad: |
+      def provision(env):
+          ec2.create_instances(ImageId=ami, MinCount=1, MaxCount=1)
+          rds.create_db_instance(DBInstanceIdentifier=name)
+    example_good: |
+      def provision(env):
+          try:
+              ec2.create_instances(ImageId=ami, MinCount=1, MaxCount=1)
+              rds.create_db_instance(DBInstanceIdentifier=name)
+          except ClientError as e:
+              logger.error(f"Provisioning failed: {e}")
+              raise
+
+  - id: PY-ERR-004
+    name: subprocess calls must use check=True or check return code
+    severity: error
+    description: >
+      subprocess.run() and subprocess.call() calls must use check=True,
+      or the return code must be explicitly checked. Never silently ignore
+      a non-zero exit code from a subprocess.
+    rationale: >
+      A subprocess that exits non-zero has failed. Without check=True or
+      explicit return code checking, the script continues past the failure
+      as if nothing went wrong — applying subsequent steps on top of a broken
+      state. check=True raises subprocess.CalledProcessError automatically.
+    match_type: regex
+    pattern: 'subprocess\.(run|call)\s*\([^)]*\)\s*(?!.*check\s*=\s*True)(?!\s*\.\s*returncode)'
+    exclude_pattern: '#|check=True'
+    example_bad: |
+      subprocess.run(["terraform", "apply", "-auto-approve"])
+      result = subprocess.run(["ansible-playbook", "site.yml"])
+      # no check on result.returncode
+    example_good: |
+      subprocess.run(["terraform", "apply", "-auto-approve"], check=True)
+      result = subprocess.run(["ansible-playbook", "site.yml"])
+      if result.returncode != 0:
+          raise RuntimeError(f"ansible-playbook failed with code {result.returncode}")
+
+  - id: PY-ERR-005
+    name: Use context managers for file and connection handling
+    severity: warning
+    description: >
+      File operations and network/database connections must use context managers
+      (with statements) to ensure resources are released even when exceptions occur.
+    rationale: >
+      Files and connections not properly closed leak file descriptors and
+      connections. In long-running infrastructure scripts or scripts that
+      process many resources, this can exhaust system limits. Context managers
+      guarantee cleanup even when exceptions are raised.
+    match_type: regex
+    pattern: '^\s+\w+\s*=\s*open\s*\([^)]+\)\s*$'
+    exclude_pattern: '#'
+    example_bad: |
+      f = open('config.json')
+      data = json.load(f)
+      f.close()
+    example_good: |
+      with open('config.json') as f:
+          data = json.load(f)
+
+  - id: PY-ERR-006
+    name: Scripts must set a non-zero exit code on failure
+    severity: error
+    description: >
+      When a Python infrastructure script catches a fatal error it must exit
+      with sys.exit(1) or a non-zero code. Do not allow the script to exit 0
+      after logging an error.
+    rationale: >
+      Jenkins, AAP, and other orchestration tools check exit codes to determine
+      whether a job succeeded. A script that logs an error but exits 0 reports
+      success to the pipeline, allowing downstream jobs to proceed on top of
+      a failed state.
+    match_type: regex
+    pattern: 'logger\.(error|critical)\s*\(.*\)\s*\n\s*(?!.*sys\.exit|raise|return)'
+    exclude_pattern: '#'
+    example_bad: |
+      except ClientError as e:
+          logger.error(f"Deployment failed: {e}")
+          # script exits 0 here — Jenkins thinks it succeeded!
+    example_good: |
+      except ClientError as e:
+          logger.error(f"Deployment failed: {e}")
+          sys.exit(1)
+
+  - id: PY-ERR-007
+    name: All exceptions must be logged with exc_info or the exception object
+    severity: warning
+    description: >
+      When logging an exception in an except block, always include the
+      exception details — either pass the exception as an argument, use
+      logger.exception(), or use logger.error(..., exc_info=True).
+    rationale: >
+      An error log that says "deployment failed" without the exception details
+      is nearly useless for debugging. The exception message, type, and
+      traceback are essential for diagnosing failures, especially in
+      unattended pipelines where you cannot rerun interactively.
+    match_type: regex
+    pattern: 'except\s+\w[\w\s,()]*\s+as\s+(\w+):\s*\n\s+logger\.(error|warning|critical)\s*\(\s*[f''"]\s*[^''"\)]*[''"]'
+    exclude_pattern: 'exc_info|logger\.exception|\{e\}|\{err\}|\{error\}|\{ex\}|str\(e\)'
+    example_bad: |
+      except Exception as e:
+          logger.error("Deployment failed")
+    example_good: |
+      except Exception as e:
+          logger.error(f"Deployment failed: {e}", exc_info=True)
+          # or:
+          logger.exception("Deployment failed")
+
+  - id: PY-ERR-008
+    name: Implement retry logic for transient cloud API failures
+    severity: info
+    description: >
+      Functions that call cloud APIs should implement retry logic for
+      transient errors (throttling, network timeouts). Use tenacity,
+      backoff, or boto3's built-in retry config rather than bare try/except.
+    rationale: >
+      Cloud APIs regularly return ThrottlingException, RequestLimitExceeded,
+      or connection timeouts under load. A single try/except that fails
+      immediately on these transient errors makes scripts brittle. Exponential
+      backoff with jitter is the industry standard for cloud API clients.
+    match_type: regex
+    pattern: 'except\s+.*(?:Throttling|RateLimit|TooManyRequests|ServiceUnavailable).*:\s*\n\s+(?:pass|time\.sleep\s*\(\s*\d+\s*\))'
+    exclude_pattern: '#|retry|backoff|tenacity'
+    example_bad: |
+      except ClientError as e:
+          if 'ThrottlingException' in str(e):
+              time.sleep(1)
+              # single fixed retry
+    example_good: |
+      from tenacity import retry, stop_after_attempt, wait_exponential
+
+      @retry(stop=stop_after_attempt(5),
+             wait=wait_exponential(multiplier=1, min=2, max=30))
+      def create_stack(name, template):
+          cfn.create_stack(StackName=name, TemplateBody=template)
+
+  - id: PY-ERR-009
+    name: Use specific exception types in raise statements
+    severity: warning
+    description: >
+      raise statements must raise a specific exception type, not a bare
+      raise Exception("message"). Use the most appropriate built-in or
+      custom exception class.
+    rationale: >
+      Specific exception types allow callers to catch exactly what they can
+      handle. raise Exception() forces callers to catch everything or nothing.
+      Good exception design makes error flows in infrastructure scripts
+      explicit and testable.
+    match_type: regex
+    pattern: 'raise\s+Exception\s*\('
+    exclude_pattern: '#'
+    example_bad: |
+      if not bucket_exists:
+          raise Exception(f"Bucket {name} not found")
+      if env not in VALID_ENVS:
+          raise Exception(f"Invalid environment: {env}")
+    example_good: |
+      if not bucket_exists:
+          raise ValueError(f"Bucket {name} not found")
+      if env not in VALID_ENVS:
+          raise ValueError(f"Invalid environment: {env}. Must be one of: {VALID_ENVS}")
+
+  - id: PY-ERR-010
+    name: Scripts must configure logging before first use
+    severity: error
+    description: >
+      Scripts must configure the logging module (basicConfig or a handler)
+      before any logger calls. Unconfigured logging silently discards all
+      log messages.
+    rationale: >
+      Python's logging module does nothing by default — all messages are
+      silently discarded until a handler is configured. An infrastructure
+      script that calls logger.error() without configuring logging first
+      produces no visible output, making debugging impossible.
+    match_type: file_missing_pattern
+    required_pattern: 'logging\.(basicConfig|getLogger|FileHandler|StreamHandler)'
+    search_lines: 9999
+    example_bad: |
+      import logging
+      logger = logging.getLogger(__name__)
+
+      def deploy():
+          logger.info("Starting deploy")   # silently discarded!
+    example_good: |
+      import logging
+      logging.basicConfig(
+          level=logging.INFO,
+          format='%(asctime)s %(levelname)s %(name)s %(message)s'
+      )
+      logger = logging.getLogger(__name__)

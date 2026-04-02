@@ -1,0 +1,184 @@
+category: Python - Hardcoding & Sensitive Data
+technology: python
+description: >
+  Rules to prevent hardcoded infrastructure values, environment-specific
+  configuration, and sensitive data in Python automation scripts.
+  All environment-specific values must be externalised as variables or config.
+
+rules:
+
+  - id: PY-HARD-001
+    name: No hardcoded IP addresses
+    severity: error
+    description: >
+      IP addresses must not be hardcoded in Python infrastructure scripts.
+      Use configuration files, environment variables, or service discovery.
+    rationale: >
+      Hardcoded IPs break immediately when infrastructure is rebuilt, migrated,
+      or scaled. They also expose internal network topology in source code and
+      prevent the same script from being used across environments.
+    match_type: regex
+    pattern: '[''"](?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)[''"]'
+    exclude_pattern: '#|0\.0\.0\.0|127\.0\.0\.1|255\.255\.255\.255|os\.environ|config\.|example|placeholder'
+    example_bad: |
+      DB_HOST    = "10.20.30.45"
+      PROXY_HOST = "192.168.1.100"
+    example_good: |
+      DB_HOST    = os.environ["DB_HOST"]
+      PROXY_HOST = config.get("proxy", "host")
+
+  - id: PY-HARD-002
+    name: No hardcoded hostnames or FQDNs
+    severity: error
+    description: >
+      Internal hostnames, FQDNs, and service endpoint URLs must not be
+      hardcoded. Use environment variables or a config file.
+    rationale: >
+      Hardcoded hostnames cannot be changed without modifying code. They make
+      scripts environment-specific and require code changes to promote a script
+      from dev to prod. Service endpoints change during migrations, renames,
+      and cloud transitions.
+    match_type: regex
+    pattern: '[''"]https?://[a-z0-9\-]+\.(internal|local|corp|company\.com|example\.com)[/''"]'
+    flags: IGNORECASE
+    exclude_pattern: '#|os\.environ|config\.|getenv|example\.com.*#\s*example'
+    example_bad: |
+      API_URL = "https://api.internal.company.com/v1"
+      DB_URL  = "postgresql://db01.corp/mydb"
+    example_good: |
+      API_URL = os.environ["API_URL"]
+      DB_URL  = os.environ["DATABASE_URL"]
+
+  - id: PY-HARD-003
+    name: No hardcoded environment names in logic
+    severity: warning
+    description: >
+      Environment names (prod, production, staging, dev) must not be hardcoded
+      in comparison logic. Accept the environment as a parameter or config value.
+    rationale: >
+      Hardcoded environment comparisons like if env == "prod" create brittle
+      code that breaks if environment naming conventions change, and must be
+      updated in every script when a new environment is added.
+    match_type: regex
+    pattern: 'if\s+\w+\s*==\s*[''"](?:prod|production|staging|stage|dev|development|uat|test)[''"]'
+    flags: IGNORECASE
+    exclude_pattern: '#|VALID_ENVS|ENVIRONMENTS|allowed'
+    example_bad: |
+      if env == "prod":
+          enable_deletion_protection = True
+      elif env == "staging":
+          enable_deletion_protection = False
+    example_good: |
+      PROTECTED_ENVS = os.environ.get("PROTECTED_ENVS", "prod,production").split(",")
+      enable_deletion_protection = env in PROTECTED_ENVS
+
+  - id: PY-HARD-004
+    name: No hardcoded AWS region strings
+    severity: warning
+    description: >
+      AWS region strings (e.g. us-east-1, eu-west-2) must not be hardcoded
+      as literals. Use environment variables or boto3 session defaults.
+    rationale: >
+      Hardcoded regions prevent scripts from being used in a different region
+      without code changes and are a common cause of deploying resources to
+      the wrong region accidentally.
+    match_type: regex
+    pattern: '[''"](?:us-east-[12]|us-west-[12]|eu-west-[123]|eu-central-1|ap-southeast-[12]|ap-northeast-[12])[''"]'
+    exclude_pattern: '#|os\.environ|config\.|getenv|DEFAULT_REGION\s*='
+    example_bad: |
+      client = boto3.client('ec2', region_name='eu-west-1')
+      REGIONS = ['us-east-1', 'eu-west-2']
+    example_good: |
+      REGION = os.environ.get("AWS_DEFAULT_REGION", "eu-west-1")
+      client = boto3.client('ec2', region_name=REGION)
+
+  - id: PY-HARD-005
+    name: No hardcoded port numbers
+    severity: warning
+    description: >
+      Port numbers for services (databases, APIs, message queues) must not
+      be hardcoded. Use constants defined from configuration or environment.
+    rationale: >
+      Hardcoded port numbers break when services are reconfigured to use
+      non-standard ports (common in enterprise environments for security
+      reasons or to avoid conflicts). Centralised port configuration
+      makes changes easy and prevents inconsistencies across scripts.
+    match_type: regex
+    pattern: '(?:port|PORT)\s*=\s*(?:3306|5432|6379|27017|9200|5601|8080|8443|9092)\b'
+    exclude_pattern: '#|os\.environ|config\.|getenv|DEFAULT_PORT'
+    example_bad: |
+      DB_PORT    = 5432
+      REDIS_PORT = 6379
+      ES_PORT    = 9200
+    example_good: |
+      DB_PORT    = int(os.environ.get("DB_PORT",    "5432"))
+      REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
+      ES_PORT    = int(os.environ.get("ES_PORT",    "9200"))
+
+  - id: PY-HARD-006
+    name: No hardcoded usernames or service account names
+    severity: error
+    description: >
+      Usernames, service account names, IAM role names, and database user
+      names must not be hardcoded. These differ between environments and
+      must be injected as configuration.
+    rationale: >
+      Service accounts and usernames differ between environments. A hardcoded
+      username from dev that happens to exist in prod with different permissions
+      is a common source of privilege escalation and unexpected access.
+    match_type: regex
+    pattern: '(?:username|user_name|db_user|admin_user|service_account)\s*=\s*[''"][a-zA-Z]\w{2,}[''"]'
+    flags: IGNORECASE
+    exclude_pattern: '#|os\.environ|config\.|getenv|postgres|admin.*#\s*default|root.*#\s*default'
+    example_bad: |
+      DB_USER      = "app_svc_account"
+      ADMIN_USER   = "deploy_admin"
+    example_good: |
+      DB_USER      = os.environ["DB_USER"]
+      ADMIN_USER   = os.environ["DEPLOY_USER"]
+
+  - id: PY-HARD-007
+    name: No hardcoded S3 bucket names or cloud resource identifiers
+    severity: error
+    description: >
+      S3 bucket names, ARNs, resource group names, and other cloud resource
+      identifiers must not be hardcoded. Use environment variables or
+      a configuration module.
+    rationale: >
+      Cloud resource names include environment and account identifiers.
+      Hardcoded names prevent the same script from working across environments
+      and make resource names inconsistent when naming conventions change.
+    match_type: regex
+    pattern: '(?:bucket|bucket_name|s3_bucket|BUCKET)\s*=\s*[''"][a-z][a-z0-9\-]{3,}[''"]'
+    exclude_pattern: '#|os\.environ|config\.|getenv|example|placeholder|test-bucket'
+    example_bad: |
+      BACKUP_BUCKET = "prod-backups-eu-west-1"
+      LOG_BUCKET    = "company-audit-logs"
+    example_good: |
+      BACKUP_BUCKET = os.environ["BACKUP_BUCKET"]
+      LOG_BUCKET    = os.environ["LOG_BUCKET"]
+
+  - id: PY-HARD-008
+    name: Configuration must be loaded from external sources
+    severity: info
+    description: >
+      Scripts with more than a few configuration values should load them
+      from a config file (YAML, JSON, TOML) or environment variables,
+      not define them as module-level constants.
+    rationale: >
+      Embedding configuration as Python constants requires code changes for
+      every environment and makes the script untestable without editing source.
+      External configuration allows the same script to serve all environments
+      with zero code changes.
+    match_type: regex
+    pattern: '^[A-Z_]{4,}\s*=\s*[''"][^''"]{5,}[''"]'
+    exclude_pattern: '#|LOG_FORMAT|LOG_LEVEL|VERSION|__version__|DESCRIPTION|USAGE'
+    example_bad: |
+      DB_HOST      = "mydb.internal.corp"
+      DB_NAME      = "infrastructure_db"
+      DEPLOY_USER  = "cicd_deployer"
+      NOTIFY_EMAIL = "infra@company.com"
+    example_good: |
+      config = yaml.safe_load(open(os.environ["CONFIG_FILE"]))
+      DB_HOST      = config["database"]["host"]
+      DB_NAME      = config["database"]["name"]

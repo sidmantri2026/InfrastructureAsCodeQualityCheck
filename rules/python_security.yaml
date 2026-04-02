@@ -1,0 +1,281 @@
+category: Python - Security
+technology: python
+description: >
+  Security rules for Python infrastructure automation scripts.
+  Prevents hardcoded credentials, unsafe subprocess usage, insecure
+  network calls, and other security anti-patterns common in DevOps Python code.
+
+rules:
+
+  - id: PY-SEC-001
+    name: No hardcoded passwords, tokens, or API keys
+    severity: critical
+    description: >
+      Passwords, API keys, tokens, and secrets must never be hardcoded as
+      string literals. Use environment variables, AWS Secrets Manager,
+      HashiCorp Vault, or another secrets management system.
+    rationale: >
+      Hardcoded credentials in Python scripts will be committed to source
+      control and are visible to anyone with repository access. They cannot
+      be rotated without code changes and will persist in git history even
+      after removal.
+    match_type: regex
+    pattern: '(password|passwd|secret|api_key|apikey|token|private_key|access_key|auth_key)\s*=\s*[''"][^''"${\s]{6,}[''"]'
+    flags: IGNORECASE
+    exclude_pattern: '#|os\.environ|getenv|get_secret|vault|placeholder|example|changeme|YOUR_|<|>'
+    example_bad: |
+      DB_PASSWORD = "MyS3cr3tPass!"
+      API_TOKEN   = "ghp_abc123xyz456"
+      aws_secret_access_key = "wJalrXUt/K7MDENG/bPxRfi"
+    example_good: |
+      DB_PASSWORD = os.environ["DB_PASSWORD"]
+      API_TOKEN   = get_secret("github/api-token")
+      aws_secret_access_key = os.environ["AWS_SECRET_ACCESS_KEY"]
+
+  - id: PY-SEC-002
+    name: No hardcoded AWS account IDs or cloud credentials
+    severity: critical
+    description: >
+      AWS account IDs, GCP project IDs, Azure subscription IDs, and any
+      cloud-provider credentials must not be hardcoded. Use environment
+      variables or a config file loaded from outside the repository.
+    rationale: >
+      Hardcoded account IDs expose your cloud infrastructure topology in
+      source code. Combined with other information they can be used to
+      enumerate resources. Credentials must always be injected at runtime.
+    match_type: regex
+    pattern: '(account_id|aws_account|subscription_id|project_id)\s*=\s*[''"][0-9]{8,}[''"]'
+    flags: IGNORECASE
+    exclude_pattern: '#|os\.environ|getenv|config\.|placeholder|example'
+    example_bad: |
+      ACCOUNT_ID = "123456789012"
+      ROLE_ARN   = "arn:aws:iam::123456789012:role/DeployRole"
+    example_good: |
+      ACCOUNT_ID = os.environ["AWS_ACCOUNT_ID"]
+      ROLE_ARN   = f"arn:aws:iam::{ACCOUNT_ID}:role/DeployRole"
+
+  - id: PY-SEC-003
+    name: subprocess calls must not use shell=True
+    severity: error
+    description: >
+      subprocess.run(), subprocess.call(), subprocess.Popen(), and similar
+      functions must not use shell=True. Pass command arguments as a list.
+    rationale: >
+      shell=True passes the command string to the OS shell (/bin/sh on Linux),
+      enabling shell injection if any part of the command includes user-controlled
+      input. Using a list of arguments bypasses the shell entirely, preventing
+      injection attacks even if variable values contain spaces or special characters.
+    match_type: regex
+    pattern: 'subprocess\.(run|call|Popen|check_output|check_call)\s*\([^)]*shell\s*=\s*True'
+    exclude_pattern: '#'
+    example_bad: |
+      user_input = args.bucket_name
+      subprocess.run(f"aws s3 ls {user_input}", shell=True)
+    example_good: |
+      user_input = args.bucket_name
+      subprocess.run(["aws", "s3", "ls", user_input], check=True)
+
+  - id: PY-SEC-004
+    name: No use of eval() or exec() on dynamic input
+    severity: critical
+    description: >
+      eval() and exec() must not be called with any dynamic or externally
+      sourced input. These functions execute arbitrary Python code and
+      represent a critical code-injection vulnerability.
+    rationale: >
+      eval() and exec() with dynamic input allow an attacker who controls
+      the input to execute any code on the system. In infrastructure scripts
+      this means arbitrary cloud API calls, file system access, or lateral
+      movement within the network.
+    match_type: regex
+    pattern: '\b(eval|exec)\s*\(\s*(?![\''"])'
+    exclude_pattern: '#'
+    example_bad: |
+      config = eval(response_body)
+      exec(user_provided_script)
+    example_good: |
+      config = json.loads(response_body)
+      # If dynamic execution is truly needed, use a whitelist of allowed operations
+
+  - id: PY-SEC-005
+    name: SSL certificate verification must not be disabled
+    severity: critical
+    description: >
+      SSL/TLS certificate verification must never be disabled. Do not pass
+      verify=False to requests.get/post/put or similar HTTP client calls.
+    rationale: >
+      Disabling certificate verification allows man-in-the-middle attacks.
+      An attacker on the network can intercept HTTPS traffic, steal credentials
+      passed in requests, and inject malicious responses. This is especially
+      dangerous in infrastructure scripts that communicate with cloud APIs.
+    match_type: regex
+    pattern: '\.\s*(get|post|put|patch|delete|request)\s*\([^)]*verify\s*=\s*False'
+    exclude_pattern: '#'
+    example_bad: |
+      response = requests.get(url, verify=False)
+      response = session.post(api_url, json=payload, verify=False)
+    example_good: |
+      response = requests.get(url)
+      response = session.post(api_url, json=payload, verify="/etc/ssl/ca-bundle.crt")
+
+  - id: PY-SEC-006
+    name: Use secrets module for generating random tokens, not random
+    severity: error
+    description: >
+      For cryptographic purposes (tokens, passwords, session IDs), use the
+      secrets module, not the random module. random is not cryptographically
+      secure.
+    rationale: >
+      Python's random module uses a Mersenne Twister PRNG which is predictable.
+      An attacker who observes a few outputs can predict future values. The
+      secrets module uses the OS CSPRNG (/dev/urandom) which is cryptographically
+      secure and appropriate for tokens, passwords, and nonces.
+    match_type: regex
+    pattern: 'random\.(choice|randint|randbelow|getrandbits|token)\s*\('
+    exclude_pattern: '#|secrets\.|import random.*#\s*(test|mock|simulation)'
+    example_bad: |
+      import random
+      token   = random.choice(string.ascii_letters + string.digits)
+      api_key = ''.join(random.choices(string.ascii_lowercase, k=32))
+    example_good: |
+      import secrets
+      token   = secrets.token_urlsafe(32)
+      api_key = secrets.token_hex(16)
+
+  - id: PY-SEC-007
+    name: YAML loading must use yaml.safe_load, not yaml.load
+    severity: error
+    description: >
+      When loading YAML files, always use yaml.safe_load() or
+      yaml.safe_load_all(). Never use yaml.load() without an explicit
+      Loader argument.
+    rationale: >
+      yaml.load() with the default Loader can deserialise arbitrary Python
+      objects from YAML, including os.system calls. An attacker who can
+      control a YAML file (config, inventory, playbook) can execute arbitrary
+      code. yaml.safe_load() only loads basic Python types (dicts, lists,
+      strings, numbers).
+    match_type: regex
+    pattern: 'yaml\.load\s*\([^)]*\)'
+    exclude_pattern: '#|yaml\.load\s*\([^)]*Loader\s*='
+    example_bad: |
+      config = yaml.load(open('config.yaml'))
+      data   = yaml.load(response_text)
+    example_good: |
+      config = yaml.safe_load(open('config.yaml'))
+      data   = yaml.safe_load(response_text)
+
+  - id: PY-SEC-008
+    name: No use of pickle for deserialising untrusted data
+    severity: error
+    description: >
+      Do not use pickle.load(), pickle.loads(), or joblib.load() to
+      deserialise data from external sources, network responses, or
+      user-provided files.
+    rationale: >
+      Pickle can execute arbitrary Python code during deserialisation.
+      An attacker who can supply a pickle payload can run any code on
+      the system. Use JSON, YAML (safe_load), or protocol buffers for
+      external data exchange.
+    match_type: regex
+    pattern: 'pickle\.(load|loads)\s*\('
+    exclude_pattern: '#'
+    example_bad: |
+      with open(cache_file, 'rb') as f:
+          data = pickle.load(f)
+    example_good: |
+      with open(cache_file, 'r') as f:
+          data = json.load(f)
+
+  - id: PY-SEC-009
+    name: Use parameterised queries — no string-formatted SQL
+    severity: critical
+    description: >
+      SQL queries must use parameterised statements (placeholders) rather
+      than string formatting or concatenation with variable values.
+    rationale: >
+      String-formatted SQL is vulnerable to SQL injection. Even in internal
+      infrastructure scripts, injected values can drop tables, exfiltrate
+      data, or escalate privileges in databases managed by the script.
+      Parameterised queries are immune to injection by design.
+    match_type: regex
+    pattern: '(cursor|conn|connection)\.(execute|executemany)\s*\(\s*[f''"]\s*.*%s.*[^,\)]+\)'
+    exclude_pattern: '#'
+    example_bad: |
+      cursor.execute(f"SELECT * FROM servers WHERE env = '{env}'")
+      cursor.execute("UPDATE jobs SET status='%s' WHERE id=%s" % (status, job_id))
+    example_good: |
+      cursor.execute("SELECT * FROM servers WHERE env = %s", (env,))
+      cursor.execute("UPDATE jobs SET status=%s WHERE id=%s", (status, job_id))
+
+  - id: PY-SEC-010
+    name: Temporary files must use tempfile module
+    severity: error
+    description: >
+      Temporary files must be created using the tempfile module
+      (NamedTemporaryFile, mkstemp, TemporaryDirectory). Do not construct
+      temporary file paths manually using /tmp/ concatenation.
+    rationale: >
+      Manually constructed /tmp/ paths are vulnerable to symlink attacks and
+      race conditions. The tempfile module creates files with restrictive
+      permissions (0o600) and unpredictable names, preventing other processes
+      from predicting or accessing the file.
+    match_type: regex
+    pattern: '[''"]\/tmp\/\w|os\.path\.join\s*\([^)]*[''"]\/tmp[''"]'
+    exclude_pattern: '#|tempfile\.|os\.environ'
+    example_bad: |
+      tmp_path = f"/tmp/deploy_{env}.sh"
+      with open(tmp_path, 'w') as f:
+          f.write(script)
+    example_good: |
+      with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as f:
+          f.write(script)
+          tmp_path = f.name
+
+  - id: PY-SEC-011
+    name: No use of assert for security or input validation
+    severity: error
+    description: >
+      Do not use assert statements to validate security-relevant inputs,
+      permissions, or preconditions. Use explicit if/raise instead.
+    rationale: >
+      Python's assert statements are removed entirely when code is run with
+      the -O (optimise) flag, which some deployment environments enable.
+      A security check that uses assert silently becomes a no-op in
+      optimised mode, bypassing the validation entirely.
+    match_type: regex
+    pattern: '^\s*assert\s+(user|role|permission|auth|token|key|secret|env)\b'
+    flags: IGNORECASE
+    exclude_pattern: '#'
+    example_bad: |
+      assert user_role == "admin", "Must be admin"
+      assert token is not None, "Token required"
+    example_good: |
+      if user_role != "admin":
+          raise PermissionError(f"Admin role required, got: {user_role}")
+      if token is None:
+          raise ValueError("Authentication token is required")
+
+  - id: PY-SEC-012
+    name: Log statements must not include credentials or sensitive values
+    severity: error
+    description: >
+      Logging calls must not log passwords, tokens, API keys, or secret
+      values — even at DEBUG level. Use redaction or structured logging
+      with sensitive field masking.
+    rationale: >
+      Log files are often stored unencrypted, shipped to centralised logging
+      platforms, and retained for long periods. A secret that appears in a
+      log line is effectively compromised — it is accessible to anyone with
+      log read access, appears in log exports, and persists after rotation.
+    match_type: regex
+    pattern: '(logger|logging)\.(debug|info|warning|error|critical)\s*\(.*(?:password|token|secret|key|credential)'
+    flags: IGNORECASE
+    exclude_pattern: '#|redact|mask|sanitize|\*\*\*'
+    example_bad: |
+      logger.debug(f"Connecting with password={db_password}")
+      logger.info(f"Using token: {api_token}")
+    example_good: |
+      logger.debug("Connecting to database")
+      logger.info("API authentication configured")
+      # If you must log key presence: logger.debug(f"Token present: {bool(api_token)}")

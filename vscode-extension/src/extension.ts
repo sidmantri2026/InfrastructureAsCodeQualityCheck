@@ -7,7 +7,7 @@ import { execFile, spawn } from 'child_process';
 // ─── Constants ────────────────────────────────────────────────────────────────
 const EXTENSION_NAME = 'IaC Quality Reviewer';
 const DIAG_SOURCE    = 'IaC Reviewer';
-const SUPPORTED_EXTENSIONS  = new Set(['.yml','.yaml','.sh','.ps1','.groovy','.jenkinsfile']);
+const SUPPORTED_EXTENSIONS  = new Set(['.yml','.yaml','.sh','.ps1','.groovy','.jenkinsfile','.py']);
 const SUPPORTED_EXACT_NAMES = new Set(['jenkinsfile']);
 
 let diagnosticCollection: vscode.DiagnosticCollection;

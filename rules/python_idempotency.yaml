@@ -1,0 +1,201 @@
+category: Python - Idempotency
+technology: python
+description: >
+  Idempotency rules for Python infrastructure automation scripts.
+  Ensures scripts can be safely re-run multiple times without creating
+  duplicate resources, causing errors, or leaving infrastructure in
+  a broken state.
+
+rules:
+
+  - id: PY-IDEM-001
+    name: Check resource existence before creating it
+    severity: error
+    description: >
+      Before creating a cloud resource, check whether it already exists.
+      Create only if absent. Do not rely solely on catching exceptions to
+      handle the "already exists" case.
+    rationale: >
+      Infrastructure scripts are often re-run after failures, during
+      reconciliation, or by multiple pipeline runs. Creating a resource
+      that already exists either raises an error or creates a duplicate.
+      A guard check makes the operation idempotent and safe to re-run.
+    match_type: regex
+    pattern: '\.(create_bucket|create_table|create_queue|create_cluster|create_stack|create_vpc|create_subnet)\s*\('
+    exclude_pattern: '#|if\s+not|exists|try:|except'
+    example_bad: |
+      def setup_bucket(name):
+          s3.create_bucket(Bucket=name)   # fails on re-run!
+    example_good: |
+      def setup_bucket(name):
+          if not bucket_exists(name):
+              s3.create_bucket(Bucket=name)
+              logger.info(f"Created bucket {name}")
+          else:
+              logger.info(f"Bucket {name} already exists — skipping")
+
+  - id: PY-IDEM-002
+    name: File creation must check if file already exists
+    severity: warning
+    description: >
+      Before writing a file that should only be created once (config files,
+      certificates, deployment markers), check whether it already exists.
+      Use the 'x' open mode for exclusive creation where appropriate.
+    rationale: >
+      Re-running a script that overwrites a file without checking can corrupt
+      state — overwriting a config that was manually modified, replacing a
+      certificate that was already deployed, or resetting a deployment marker
+      that prevents duplicate runs.
+    match_type: regex
+    pattern: 'open\s*\([^)]*,\s*[''"]w[''"]'
+    exclude_pattern: '#|if\s+not.*exists|os\.path\.exists|Path.*exists'
+    example_bad: |
+      with open(config_path, 'w') as f:
+          json.dump(config, f)
+    example_good: |
+      if not os.path.exists(config_path):
+          with open(config_path, 'w') as f:
+              json.dump(config, f)
+      else:
+          logger.info(f"Config already exists at {config_path} — skipping write")
+
+  - id: PY-IDEM-003
+    name: Deletion operations must verify resource state before deleting
+    severity: error
+    description: >
+      Before deleting a resource, verify it still exists. Deletion of a
+      non-existent resource should log a warning and continue, not raise
+      an unhandled exception.
+    rationale: >
+      Teardown scripts are often re-run after partial failure. If a resource
+      was already deleted in a previous run, attempting to delete it again
+      raises an error that aborts the teardown. An existence check or
+      catching the appropriate "not found" error makes teardown idempotent.
+    match_type: regex
+    pattern: '\.(delete_bucket|delete_table|delete_stack|delete_cluster|delete_queue|terminate_instances)\s*\('
+    exclude_pattern: '#|if\s+|exists|try:|NoSuchBucket|NotFoundException'
+    example_bad: |
+      def teardown(name):
+          s3.delete_bucket(Bucket=name)
+          dynamo.delete_table(TableName=name)
+    example_good: |
+      def teardown(name):
+          try:
+              s3.delete_bucket(Bucket=name)
+          except ClientError as e:
+              if e.response['Error']['Code'] == 'NoSuchBucket':
+                  logger.warning(f"Bucket {name} already deleted")
+              else:
+                  raise
+
+  - id: PY-IDEM-004
+    name: Use upsert patterns for database operations
+    severity: warning
+    description: >
+      Database INSERT operations on infrastructure state tables should use
+      INSERT ... ON CONFLICT or an upsert pattern rather than plain INSERT,
+      to be safe on re-runs.
+    rationale: >
+      A plain INSERT into a configuration or state table fails on re-run
+      with a duplicate key error. Using INSERT ... ON CONFLICT (PostgreSQL)
+      or INSERT OR REPLACE (SQLite) makes the operation idempotent.
+    match_type: regex
+    pattern: 'cursor\.execute\s*\(\s*[f''"]?\s*INSERT\s+INTO'
+    flags: IGNORECASE
+    exclude_pattern: '#|ON\s+CONFLICT|OR\s+REPLACE|OR\s+IGNORE|INSERT\s+OR'
+    example_bad: |
+      cursor.execute(
+          "INSERT INTO deployments (env, version) VALUES (%s, %s)",
+          (env, version)
+      )
+    example_good: |
+      cursor.execute(
+          """INSERT INTO deployments (env, version) VALUES (%s, %s)
+             ON CONFLICT (env) DO UPDATE SET version = EXCLUDED.version""",
+          (env, version)
+      )
+
+  - id: PY-IDEM-005
+    name: Scripts must track and skip already-completed steps
+    severity: info
+    description: >
+      Long multi-step infrastructure scripts should track which steps have
+      completed (state file, database, or cloud tags) so that re-runs can
+      skip completed steps.
+    rationale: >
+      Multi-step provisioning scripts (create VPC, subnets, security groups,
+      instances, load balancer) often fail midway. Without step tracking,
+      re-running the script repeats all earlier successful steps and may
+      fail on creating already-existing resources.
+    match_type: file_missing_pattern
+    required_pattern: '(?:state|checkpoint|completed|step_done|already_ran)'
+    search_lines: 9999
+    example_bad: |
+      def full_provision():
+          create_vpc()
+          create_subnets()
+          create_security_groups()
+          create_instances()    # if this fails, re-run fails on create_vpc
+    example_good: |
+      def full_provision(state_file):
+          state = load_state(state_file)
+          if 'vpc' not in state:
+              state['vpc'] = create_vpc()
+              save_state(state_file, state)
+          if 'subnets' not in state:
+              state['subnets'] = create_subnets(state['vpc'])
+              save_state(state_file, state)
+
+  - id: PY-IDEM-006
+    name: Tag cloud resources to identify ownership and enable cleanup
+    severity: warning
+    description: >
+      All cloud resources created by Python scripts must be tagged with at
+      minimum: Environment, ManagedBy, and CreatedBy tags. Tags enable
+      idempotent cleanup and prevent orphaned resources.
+    rationale: >
+      Untagged resources are impossible to attribute to a script or pipeline
+      run. When a cleanup script runs, it cannot safely identify which
+      resources it owns. Tags also prevent accidental deletion of resources
+      created by other processes.
+    match_type: regex
+    pattern: '\.(create_bucket|create_instance|create_table|run_instances|create_stack)\s*\([^)]*\)'
+    exclude_pattern: '#|Tags|tags|TagSpecification|tag'
+    example_bad: |
+      s3.create_bucket(Bucket=bucket_name)
+      ec2.run_instances(ImageId=ami, MinCount=1, MaxCount=1)
+    example_good: |
+      s3.create_bucket(Bucket=bucket_name)
+      s3.put_bucket_tagging(Bucket=bucket_name, Tagging={'TagSet': [
+          {'Key': 'Environment', 'Value': env},
+          {'Key': 'ManagedBy',   'Value': 'python-infra-scripts'},
+          {'Key': 'CreatedBy',   'Value': os.environ.get('BUILD_USER', 'unknown')},
+      ]})
+
+  - id: PY-IDEM-007
+    name: Use dry-run mode for destructive operations
+    severity: info
+    description: >
+      Scripts that perform destructive operations (delete, terminate, purge)
+      should support a --dry-run flag that logs what would be done without
+      actually doing it.
+    rationale: >
+      Dry-run mode allows engineers to verify what a teardown or cleanup
+      script will do before committing. This is especially important for
+      scripts that run unattended in pipelines — an engineer should be able
+      to preview the changes in a PR before the pipeline executes them.
+    match_type: file_missing_pattern
+    required_pattern: 'dry.run|dry_run|DRY_RUN'
+    search_lines: 9999
+    example_bad: |
+      def cleanup_old_snapshots(cutoff_date):
+          for snap in get_snapshots_before(cutoff_date):
+              ec2.delete_snapshot(SnapshotId=snap['SnapshotId'])
+    example_good: |
+      def cleanup_old_snapshots(cutoff_date, dry_run=False):
+          for snap in get_snapshots_before(cutoff_date):
+              if dry_run:
+                  logger.info(f"[DRY RUN] Would delete: {snap['SnapshotId']}")
+              else:
+                  ec2.delete_snapshot(SnapshotId=snap['SnapshotId'])
+                  logger.info(f"Deleted snapshot: {snap['SnapshotId']}")

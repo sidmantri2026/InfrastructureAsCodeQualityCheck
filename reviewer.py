@@ -443,6 +443,7 @@ TECH_EXTENSIONS = {
     "bash":       {".sh"},
     "powershell": {".ps1"},
     "jenkinsfile": {"jenkinsfile", ".groovy", ".jenkinsfile"},
+    "python":     {".py"},
 }
 ALL_EXTENSIONS  = {ext for exts in TECH_EXTENSIONS.values() for ext in exts}
 IGNORE_DIRS     = {".git", ".tox", "__pycache__", "node_modules", ".venv", "venv"}
@@ -1154,12 +1155,13 @@ def run_new_rule_wizard(rules_dir: str):
     # ── Step 2: Category ─────────────────────────────────────────────────────
     print()
     print("── Step 2/7: Category ───────────────────────────────────────")
-    tech_label = {"ansible":"Ansible","bash":"Bash","powershell":"PowerShell","jenkinsfile":"Jenkinsfile"}[tech]
+    tech_label = {"ansible":"Ansible","bash":"Bash","powershell":"PowerShell","jenkinsfile":"Jenkinsfile","python":"Python"}[tech]
     categories = {
         "ansible":    ["Linting & Style","Security","Idempotency","Hardcoding & Sensitive Data","Custom"],
         "bash":       ["Linting & Style","Security","Error Handling","Idempotency","Hardcoding & Sensitive Data","Custom"],
         "powershell": ["Linting & Style","Security","Error Handling","Idempotency","Hardcoding & Sensitive Data","Custom"],
         "jenkinsfile":["Linting & Style","Security","Error Handling","Idempotency","Hardcoding & Sensitive Data","Custom"],
+        "python":     ["Linting & Style","Security","Error Handling","Idempotency","Hardcoding & Sensitive Data","Custom"],
     }
     short_cat = ask("Which category does this rule belong to?", categories[tech])
     category  = f"{tech_label} - {short_cat}"
@@ -1194,7 +1196,7 @@ def run_new_rule_wizard(rules_dir: str):
     print(f"  → Will save to: {target_file.name}")
 
     # Auto-generate ID using ALL existing IDs in target file as reference
-    prefix_map = {"ansible":"ANS","bash":"BASH","powershell":"PS","jenkinsfile":"JNK"}
+    prefix_map = {"ansible":"ANS","bash":"BASH","powershell":"PS","jenkinsfile":"JNK","python":"PY"}
     cat_map     = {"Linting & Style":"LINT","Security":"SEC","Error Handling":"ERR",
                    "Idempotency":"IDEM","Hardcoding & Sensitive Data":"HARD","Custom":"CUST"}
     prefix = f"{prefix_map[tech]}-{cat_map.get(short_cat,'CUST')}"
